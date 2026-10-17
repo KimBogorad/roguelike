@@ -36,7 +36,7 @@ public class GameBoard {
 
     public void attemptMove(Unit movingUnit, Position targetPos) {
         Position currentPos = getPositionOf(movingUnit);
-        if (currentPos != null && currentPos.GetX() == targetPos.GetX() && currentPos.GetY() == targetPos.GetY()) {
+        if (currentPos.equals(targetPos)) {
             return;
         }
         Cell targetCell = getCell(targetPos);
