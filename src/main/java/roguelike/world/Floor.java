@@ -1,4 +1,4 @@
-package roguelike;
+package roguelike.world;
 
 public class Floor extends Cell {
     private Occupant occupant;

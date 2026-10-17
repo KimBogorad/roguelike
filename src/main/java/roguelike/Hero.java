@@ -1,5 +1,7 @@
 package roguelike;
 
+import roguelike.world.OccupantVisitor;
+
 public abstract class Hero extends Unit implements HeroicUnit  {
     protected int exp;
     protected int player_lvl;

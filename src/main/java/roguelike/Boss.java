@@ -2,6 +2,9 @@ package roguelike;
 
 import java.util.List;
 
+import roguelike.world.GameBoard;
+import roguelike.world.Position;
+
 public class Boss extends Monster implements HeroicUnit {
     private int ability_frequency;
     private int combat_ticks;

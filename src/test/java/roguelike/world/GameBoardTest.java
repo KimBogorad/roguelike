@@ -1,7 +1,10 @@
-package roguelike;
+package roguelike.world;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import roguelike.Warrior;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class GameBoardTest {

@@ -1,4 +1,4 @@
-package roguelike;
+package roguelike.world;
 
 public class Position {
     private final int x;

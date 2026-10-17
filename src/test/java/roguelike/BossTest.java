@@ -2,6 +2,13 @@ package roguelike;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import roguelike.world.Cell;
+import roguelike.world.Floor;
+import roguelike.world.GameBoard;
+import roguelike.world.Occupant;
+import roguelike.world.Position;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class BossTest {

@@ -1,4 +1,8 @@
-package roguelike;
+package roguelike.world;
+
+import roguelike.Enemy;
+import roguelike.Hero;
+import roguelike.Unit;
 
 public class GameBoard {
     private Cell[][] board;

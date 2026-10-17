@@ -1,4 +1,4 @@
-package roguelike;
+package roguelike.world;
 
 public abstract class Cell {
     protected Position pos;

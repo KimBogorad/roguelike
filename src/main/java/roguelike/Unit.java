@@ -1,5 +1,7 @@
 package roguelike;
 
+import roguelike.world.OccupantVisitor;
+
 public abstract class Unit {
     protected String name;
     protected int hp_pool;

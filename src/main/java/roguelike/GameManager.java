@@ -6,6 +6,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
 
+import roguelike.world.Cell;
+import roguelike.world.CellVisitor;
+import roguelike.world.Floor;
+import roguelike.world.GameBoard;
+import roguelike.world.Occupant;
+import roguelike.world.Position;
+import roguelike.world.Wall;
+
 public class GameManager {
 
     private static final int MAX_LEVELS = 4;

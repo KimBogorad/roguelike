@@ -1,5 +1,8 @@
 package roguelike;
 
+import roguelike.world.GameBoard;
+import roguelike.world.Position;
+
 public class Trap extends Enemy {
     private int visibility_time;
     private int invisibility_time;

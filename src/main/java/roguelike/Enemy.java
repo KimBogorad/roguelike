@@ -1,5 +1,8 @@
 package roguelike;
 
+import roguelike.world.GameBoard;
+import roguelike.world.OccupantVisitor;
+
 public abstract class Enemy extends Unit {
     protected int exp_val;
     protected char tile;
