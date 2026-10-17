@@ -1,5 +1,7 @@
 package roguelike.world;
 
+import roguelike.model.units.Occupant;
+
 public abstract class Cell {
     protected Position pos;
 

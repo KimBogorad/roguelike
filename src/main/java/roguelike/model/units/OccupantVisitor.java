@@ -1,7 +1,4 @@
-package roguelike.world;
-
-import roguelike.Enemy;
-import roguelike.Hero;
+package roguelike.model.units;
 
 public interface OccupantVisitor {
     void visit(Hero hero);

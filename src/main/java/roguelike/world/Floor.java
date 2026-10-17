@@ -1,5 +1,7 @@
 package roguelike.world;
 
+import roguelike.model.units.Occupant;
+
 public class Floor extends Cell {
     private Occupant occupant;
 

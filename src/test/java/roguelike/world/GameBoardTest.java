@@ -3,7 +3,8 @@ package roguelike.world;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import roguelike.Warrior;
+import roguelike.model.units.Occupant;
+import roguelike.model.units.Warrior;
 
 import static org.junit.jupiter.api.Assertions.*;
 

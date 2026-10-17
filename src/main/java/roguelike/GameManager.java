@@ -6,11 +6,21 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
 
+import roguelike.model.units.Boss;
+import roguelike.model.units.Enemy;
+import roguelike.model.units.Hero;
+import roguelike.model.units.Hunter;
+import roguelike.model.units.Mage;
+import roguelike.model.units.Monster;
+import roguelike.model.units.Occupant;
+import roguelike.model.units.Rogue;
+import roguelike.model.units.Trap;
+import roguelike.model.units.Unit;
+import roguelike.model.units.Warrior;
 import roguelike.world.Cell;
 import roguelike.world.CellVisitor;
 import roguelike.world.Floor;
 import roguelike.world.GameBoard;
-import roguelike.world.Occupant;
 import roguelike.world.Position;
 import roguelike.world.Wall;
 
@@ -166,7 +176,7 @@ public class GameManager {
                 player.Tick();
                 tickEnemies();
                 enemies.removeIf(e -> {
-                    if (e.hp_current <= 0) {
+                    if (!e.isAlive()) {
                         Position p = board.getPositionOf(e);
                         if (p != null) {
                             board.setOccupant(p, new Occupant());
@@ -182,7 +192,7 @@ public class GameManager {
     /** Tick every living enemy: move monsters, trigger traps, double dispatch. */
     private void tickEnemies() {
         for (Enemy enemy : enemies) {
-            if (enemy.hp_current > 0) {
+            if (enemy.isAlive()) {
                 enemy.processTurn(board, player);
             }
         }
@@ -234,7 +244,7 @@ public class GameManager {
         Position playerPos = board.getPositionOf(player);
 
         List<Enemy> enemiesInRange = enemies.stream()
-                .filter(e -> playerPos.Range(board.getPositionOf(e)) < player.ability_range)
+                .filter(e -> playerPos.Range(board.getPositionOf(e)) < player.getAbilityRange())
                 .sorted(Comparator.comparingDouble(e -> playerPos.Range(board.getPositionOf(e))))
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
 
@@ -340,6 +350,6 @@ public class GameManager {
     // -------------------------------------------------------------------------
 
     private boolean isPlayerAlive() {
-        return player.hp_current > 0;
+        return player.isAlive();
     }
 }

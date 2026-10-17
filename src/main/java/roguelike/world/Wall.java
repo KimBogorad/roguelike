@@ -1,5 +1,7 @@
 package roguelike.world;
 
+import roguelike.model.units.Occupant;
+
 public class Wall extends Cell {
     
     public Wall(Position pos) {

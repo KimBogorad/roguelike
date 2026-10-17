@@ -1,4 +1,4 @@
-package roguelike;
+package roguelike.model.units;
 
 import java.util.Random;
 

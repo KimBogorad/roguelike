@@ -1,6 +1,6 @@
-package roguelike;
+package roguelike.model.units;
 
-import roguelike.world.OccupantVisitor;
+import roguelike.MessageCallback;
 
 public abstract class Unit {
     protected String name;
@@ -58,8 +58,11 @@ public abstract class Unit {
         return false;
     }
 
-    public abstract String description();
+    public boolean isAlive() {
+        return this.hp_current > 0;
+    }
 
+    public abstract String description();
 
     public abstract void accept(OccupantVisitor visitor);
 }

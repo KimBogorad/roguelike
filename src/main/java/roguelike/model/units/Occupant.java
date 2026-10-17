@@ -1,6 +1,4 @@
-package roguelike.world;
-
-import roguelike.Unit;
+package roguelike.model.units;
 
 public class Occupant {
     private Unit unit;

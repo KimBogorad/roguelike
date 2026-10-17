@@ -1,8 +1,10 @@
 package roguelike.world;
 
-import roguelike.Enemy;
-import roguelike.Hero;
-import roguelike.Unit;
+import roguelike.model.units.Enemy;
+import roguelike.model.units.Hero;
+import roguelike.model.units.Occupant;
+import roguelike.model.units.OccupantVisitor;
+import roguelike.model.units.Unit;
 
 public class GameBoard {
     private Cell[][] board;

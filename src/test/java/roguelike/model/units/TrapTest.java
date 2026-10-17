@@ -1,8 +1,9 @@
-package roguelike;
+package roguelike.model.units;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import roguelike.MessageCallback;
 import roguelike.world.Position;
 
 import static org.junit.jupiter.api.Assertions.*;

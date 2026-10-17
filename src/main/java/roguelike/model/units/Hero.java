@@ -1,6 +1,4 @@
-package roguelike;
-
-import roguelike.world.OccupantVisitor;
+package roguelike.model.units;
 
 public abstract class Hero extends Unit implements HeroicUnit  {
     protected int exp;
@@ -28,6 +26,10 @@ public abstract class Hero extends Unit implements HeroicUnit  {
             this.atk_pts += 4*player_lvl;
             this.def_pts += player_lvl;
         }
+    }
+
+    public int getAbilityRange() {
+        return ability_range;
     }
 
     @Override
