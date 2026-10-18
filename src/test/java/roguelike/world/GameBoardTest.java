@@ -3,8 +3,7 @@ package roguelike.world;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import roguelike.model.units.Occupant;
-import roguelike.model.units.Warrior;
+import roguelike.model.units.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -60,5 +59,69 @@ public class GameBoardTest {
 
         assertTrue(hitWall[0], "Visitor identified wall");
         assertEquals(player, board.getOccupant(new Position(0, 0)).GetUnit(), "Player remained in place");
+    }
+
+    private Occupant occupantOf(Unit unit) {
+        Occupant occ = new Occupant();
+        occ.SetUnit(unit);
+        return occ;
+    }
+
+    @Test
+    public void placedUnitIsFound() {
+        board.setOccupant(new Position(0, 0), occupantOf(player));
+        assertEquals(new Position(0, 0), board.getPositionOf(player));
+    }
+
+    @Test
+    public void neverPlacedUnitReturnsNull() {
+        Warrior stranger = new Warrior("Stranger", 100, 10, 5, 3);
+        assertNull(board.getPositionOf(stranger));
+    }
+
+    @Test
+    public void movedUnitHasNewPosition() {
+        board.setOccupant(new Position(0, 0), occupantOf(player));
+        board.attemptMove(player, new Position(0, 1));
+        assertEquals(new Position(0, 1), board.getPositionOf(player));
+    }
+
+    @Test
+    public void removedUnitReturnsNull() {
+        Position pos = new Position(0, 0);
+        board.setOccupant(pos, occupantOf(player));
+        board.setOccupant(pos, new Occupant());
+        assertNull(board.getPositionOf(player));
+    }
+
+    @Test
+    public void killingAnEnemyAndMovingIntoItsCellUpdatesBothUnits() {
+        // Huge attack against 1 HP and 0 DEF: the kill is effectively guaranteed
+        // (a roll of exactly 0 has about a 1-in-a-million chance until Random is injected)
+        Warrior killer = new Warrior("Killer", 100, 1_000_000, 0, 3);
+        killer.setMessageCallback(msg -> {});
+        Monster victim = new Monster('m', "Victim", 1, 0, 0, 0, 1);
+        victim.setMessageCallback(msg -> {});
+
+        board.setOccupant(new Position(0, 0), occupantOf(killer));
+        board.setOccupant(new Position(0, 1), occupantOf(victim));
+
+        board.attemptMove(killer, new Position(0, 1));
+
+        assertNull(board.getPositionOf(victim), "Dead enemy should leave the map");
+        assertEquals(new Position(0, 1), board.getPositionOf(killer));
+    }
+
+    @Test
+    public void staleClearDoesNotRemoveMovedUnit() {
+        Position from = new Position(0, 0);
+        Position to = new Position(0, 1);
+
+        board.setOccupant(from, occupantOf(player));
+        // wrong order on purpose: fill the new cell first, clear the old cell second
+        board.setOccupant(to, occupantOf(player));
+        board.setOccupant(from, new Occupant());
+
+        assertEquals(to, board.getPositionOf(player), "Stale clear must not delete the new entry");
     }
 }

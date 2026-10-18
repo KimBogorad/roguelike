@@ -1,5 +1,7 @@
 package roguelike.world;
 
+import java.util.IdentityHashMap;
+
 import roguelike.model.units.Enemy;
 import roguelike.model.units.Hero;
 import roguelike.model.units.Occupant;
@@ -7,10 +9,21 @@ import roguelike.model.units.OccupantVisitor;
 import roguelike.model.units.Unit;
 
 public class GameBoard {
-    private Cell[][] board;
+    private final IdentityHashMap<Unit, Position> unitPositions = new IdentityHashMap<>();
+    private final Cell[][] board;
 
     public GameBoard(Cell[][] board) {
         this.board = board;
+
+        //Initialize the Unit->Position mapping
+        for (int y = 0; y < board.length; y++) {
+            for (int x = 0; x < board[y].length; x++) {
+                Occupant occ = board[y][x].GetOccupant();
+                if (occ != null && occ.GetUnit() != null) {
+                    unitPositions.put(occ.GetUnit(), new Position(x, y));
+                }
+            }
+        }
     }
 
     public Cell getCell(Position p) {
@@ -29,7 +42,18 @@ public class GameBoard {
             
             @Override
             public void visit(Floor floor) {
-                floor.SetOccupant(o); 
+                //remove from map if needed, update board, then update map if needed
+
+                Unit unit = floor.GetOccupant().GetUnit();
+                // Removal from map should occur only when Cell unit position and map unit position match, to avoid removing a unit that has moved to a new position
+                if(p.equals(unitPositions.get(unit))) {
+                    unitPositions.remove(unit);
+                }
+                floor.SetOccupant(o);
+                // Add to map only if the new occupant has a unit (not an empty floor)
+                if (o.GetUnit() != null) {
+                    unitPositions.put(o.GetUnit(), p);
+                }
             }
         });
     }
@@ -102,15 +126,7 @@ public class GameBoard {
     }
 
     public Position getPositionOf(Unit unit) {
-        for (int y = 0; y < board.length; y++) {
-            for (int x = 0; x < board[y].length; x++) {
-                Occupant occ = board[y][x].GetOccupant();
-                if (occ != null && occ.GetUnit() == unit) {
-                    return new Position(x, y);
-                }
-            }
-        }
-        return null;
+        return unitPositions.get(unit);
     }
 
     @Override
