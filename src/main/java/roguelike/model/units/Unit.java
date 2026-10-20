@@ -1,6 +1,7 @@
 package roguelike.model.units;
 
 import roguelike.MessageCallback;
+import java.util.Random;
 
 public abstract class Unit {
     protected String name;
@@ -9,6 +10,7 @@ public abstract class Unit {
     protected int atk_pts;
     protected int def_pts;
     protected MessageCallback msgCallback;
+    protected Random rand = new Random();
 
     public Unit(String name, int hp_pool, int atk_pts, int def_pts) {
         this.name = name;
@@ -20,6 +22,9 @@ public abstract class Unit {
 
     public void setMessageCallback(MessageCallback msgCallback) {
         this.msgCallback = msgCallback;
+    }
+    public void setRand(Random rand) {
+        this.rand = rand;
     }
 
     protected void sendMsg(String msg) {
@@ -60,6 +65,10 @@ public abstract class Unit {
 
     public boolean isAlive() {
         return this.hp_current > 0;
+    }
+
+    protected int rollWithinRange(int min, int max) {
+        return rand.nextInt(max - min + 1) + min;
     }
 
     public abstract String description();
