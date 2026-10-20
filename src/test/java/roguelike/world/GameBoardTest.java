@@ -1,5 +1,7 @@
 package roguelike.world;
 
+import java.util.Random;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -97,11 +99,15 @@ public class GameBoardTest {
     @Test
     public void killingAnEnemyAndMovingIntoItsCellUpdatesBothUnits() {
         // Huge attack against 1 HP and 0 DEF: the kill is effectively guaranteed
-        // (a roll of exactly 0 has about a 1-in-a-million chance until Random is injected)
+        // The random seed is fixed to ensure deterministic behavior in the test
         Warrior killer = new Warrior("Killer", 100, 1_000_000, 0, 3);
         killer.setMessageCallback(msg -> {});
         Monster victim = new Monster('m', "Victim", 1, 0, 0, 0, 1);
         victim.setMessageCallback(msg -> {});
+
+        Random rand = new Random(42); // fixed seed for deterministic test
+        killer.setRand(rand);
+        victim.setRand(rand);
 
         board.setOccupant(new Position(0, 0), occupantOf(killer));
         board.setOccupant(new Position(0, 1), occupantOf(victim));

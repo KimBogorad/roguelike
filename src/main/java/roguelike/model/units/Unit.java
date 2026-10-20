@@ -43,8 +43,8 @@ public abstract class Unit {
         sendMsg(this.description());
         sendMsg(target.description());
 
-        int atk_roll = (int)(Math.random()*(this.atk_pts + 1));
-        int def_roll = (int)(Math.random()*(target.def_pts + 1));
+        int atk_roll = rollWithinRange(0, this.atk_pts + 1);
+        int def_roll = rollWithinRange(0, target.def_pts + 1);
 
         sendMsg(this.name + " rolled " + atk_roll + " attack points.");
         sendMsg(target.name + " rolled " + def_roll + " defense points.");
