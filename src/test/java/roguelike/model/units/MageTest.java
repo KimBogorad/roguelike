@@ -56,4 +56,46 @@ public class MageTest {
         assertTrue(mage.description().contains("Level: 2"), "Mage should level up from the EXP gained");
         assertTrue(targets.isEmpty(), "Dead monster should be removed from the valid targets list");
     }
+
+    @Test 
+    public void testDeterminismInCastAbilityAttack() {
+        Hero hero1 = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
+        Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        List<Enemy> monsters = new ArrayList<>();
+
+        monsters.add(m1);
+        hero1.rand.setSeed(50);
+
+        hero1.CastAbility(monsters, hero1);
+
+        Hero hero2 = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
+        Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        
+        monsters.remove(0);
+        monsters.add(m2);
+        hero2.rand.setSeed(50);
+
+        hero2.CastAbility(monsters, hero2);
+
+        assertEquals(m1.description(), m2.description());
+    }
+
+    @Test 
+    public void testDeterminismInCastAbilityChoice() {
+        Hero mage = new Mage("Gandalf", 100, 10, 10, 1_000, 50, 100, 1, 100);
+        Monster m1 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
+        Monster m2 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
+        List<Enemy> monsters = new ArrayList<>();
+        monsters.add(m1);
+        monsters.add(m2);
+        String desc1 = m1.description();
+        String desc2 = m2.description();
+
+        mage.rand.setSeed(42);
+
+        mage.CastAbility(monsters, mage);
+
+        assertEquals(desc1, m1.description(), "m1 should not have been picked - no damage taken");
+        assertNotEquals(desc2, m2.description(), "m2 shouldve been hit - hp should change");
+    }
 }

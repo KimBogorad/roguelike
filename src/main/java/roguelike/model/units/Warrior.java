@@ -49,6 +49,7 @@ public class Warrior extends Hero {
             sendMsg(this.name + " used Avenger's Shield, healing for " + (10 * this.def_pts) + ".");
             if (!validTargets.isEmpty()) {
                 int randomIndex = this.rand.nextInt(validTargets.size());
+                System.out.println("Selected enemy: " + randomIndex);
                 Enemy target = validTargets.get(randomIndex);
                 int damage = this.hp_pool / 10;
                 boolean killed = Attack(target, damage, 0); 

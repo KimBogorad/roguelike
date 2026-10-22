@@ -1,0 +1,1814 @@
+package roguelike;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Scanner;
+
+import roguelike.model.units.Boss;
+import roguelike.model.units.Enemy;
+import roguelike.model.units.Hero;
+import roguelike.model.units.Hunter;
+import roguelike.model.units.Mage;
+import roguelike.model.units.Monster;
+import roguelike.model.units.Occupant;
+import roguelike.model.units.Rogue;
+import roguelike.model.units.Trap;
+import roguelike.model.units.Unit;
+import roguelike.model.units.Warrior;
+import roguelike.world.Cell;
+import roguelike.world.CellVisitor;
+import roguelike.world.Floor;
+import roguelike.world.GameBoard;
+import roguelike.world.Position;
+import roguelike.world.Wall;
+
+public class GameManager {
+
+    private static final int MAX_LEVELS = 4;
+    private static final String LEVEL_FILE_PREFIX = "level";
+    private static final String LEVEL_FILE_SUFFIX = ".txt";
+
+    private GameBoard board;
+    private Hero player;
+    private List<Enemy> enemies;
+    private final Scanner scanner;
+    private final MessageCallback out;
+    private int currentLevel;
+    private String levelsDir;
+
+    /** Inject a custom output sink. */
+    public GameManager(String path) {
+        this.out = System.out::println;
+        this.scanner = new Scanner(System.in);
+        this.enemies = new ArrayList<>();
+        this.currentLevel = 1;
+        this.levelsDir = path;
+    }
+
+    // -------------------------------------------------------------------------
+    // Public entry point
+    // -------------------------------------------------------------------------
+
+    public void startGame() {
+        boolean playAgain = true;
+        while (playAgain) {
+            this.currentLevel = 1;
+            this.enemies.clear();
+            clearScreen();
+            out.send("Welcome to D&D!");
+            selectPlayer();
+            while (currentLevel <= MAX_LEVELS && isPlayerAlive()) {
+                String levelFile;
+                if (levelsDir.isEmpty()) {
+                    levelFile = LEVEL_FILE_PREFIX + currentLevel + LEVEL_FILE_SUFFIX;
+                } else {
+                    levelFile = levelsDir + File.separator + LEVEL_FILE_PREFIX + currentLevel + LEVEL_FILE_SUFFIX;
+                }
+                if (!loadLevel(levelFile)) {
+                    out.send("Error: Could not find or load -> " + levelFile);
+                    out.send("Please check if the file path is correct. Exiting game.");
+                    return;
+                }
+                out.send("--- Loading Level " + currentLevel + " ---");
+                playLevel();
+
+                if (isPlayerAlive()) {
+                    currentLevel++;
+                }
+            }
+            out.send(isPlayerAlive() ? "You won!" : "Game Over.");
+            boolean validChoice = false;
+            while (!validChoice) {
+                out.send("Do you want to restart (y/n)?");
+                out.send("If not there will be consequences Muwhahaha.");
+                String choice = scanner.nextLine().trim().toLowerCase();
+                switch (choice) {
+                    case "y" -> {
+                        clearScreen();
+                        validChoice = true;
+                    }
+                    case "n" -> {
+                        out.send("Thank you for playing, deleting system32...");
+                        validChoice = true;
+                        playAgain = false;
+                    }
+                    default -> {
+                        out.send("Invalid input! Please enter exactly 'y' or 'n'.");
+                    }
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Player selection
+    // -------------------------------------------------------------------------
+    private void clearScreen() {
+        try {
+            if (System.getProperty("os.name").toLowerCase().contains("windows")) {
+                new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
+            } else {
+                System.out.print("\033[H\033[2J");
+                System.out.flush();
+            }
+        } catch (Exception e) {
+            for (int i = 0; i < 50; ++i) System.out.println();
+        }
+    }
+
+    private void selectPlayer() {
+        out.send("Select player:");
+        out.send("1. Jon Snow     (Warrior)");
+        out.send("2. The Hound    (Warrior)");
+        out.send("3. Melisandre   (Mage)");
+        out.send("4. Thoros of Myr (Mage)");
+        out.send("5. Arya Stark   (Rogue)");
+        out.send("6. Bronn        (Rogue)");
+        out.send("7. Ygritte      (Hunter)");
+
+        int choice = -1;
+        boolean validChoice = false;
+        while (!validChoice){
+            try {
+                String input = scanner.nextLine().trim();
+                choice = Integer.parseInt(input);
+                if (choice >= 1 && choice <= 7){
+                    validChoice = true;
+                } else {
+                    out.send("Invalid choice. Please enter a number between 1 and 7.");
+                }
+
+            } catch (NumberFormatException e) {
+                out.send("Invalid input. Please enter a valid number.");
+            }
+        }
+        player = createPlayer(choice);
+        player.setMessageCallback(out);
+    }
+
+    private Hero createPlayer(int choice) {
+        return switch (choice) {
+            case 1 -> new Warrior("Jon Snow", 300, 30, 4, 3);
+            case 2 -> new Warrior("The Hound", 400, 20, 6, 5);
+            case 3 -> new Mage("Melisandre", 100, 5, 1, 300, 30, 15, 5, 6);
+            case 4 -> new Mage("Thoros of Myr", 250, 25, 4, 150, 20, 20, 3, 4);
+            case 5 -> new Rogue("Arya Stark", 150, 40, 2, 20);
+            case 6 -> new Rogue("Bronn", 250, 35, 3, 50);
+            case 7 -> new Hunter("Ygritte", 220, 30, 2, 6);
+            default -> new Warrior("Jon Snow", 300, 30, 4, 3);
+        };
+    }
+
+    // -------------------------------------------------------------------------
+    // Game loop
+    // -------------------------------------------------------------------------
+
+    private void playLevel() {
+        while (isPlayerAlive() && !enemies.isEmpty()) {
+            out.send(board.toString());
+            out.send(player.description());
+            char input = readInput();
+            clearScreen();
+            boolean validTurn = processPlayerInput(input);
+            if (validTurn) {
+                player.Tick();
+                tickEnemies();
+                enemies.removeIf(e -> {
+                    if (!e.isAlive()) {
+                        Position p = board.getPositionOf(e);
+                        if (p != null) {
+                            board.setOccupant(p, new Occupant());
+                        }
+                        return true;
+                    }
+                    return false;
+                });
+            }
+        }
+    }
+
+    /** Tick every living enemy: move monsters, trigger traps, double dispatch. */
+    private void tickEnemies() {
+        for (Enemy enemy : enemies) {
+            if (enemy.isAlive()) {
+                enemy.processTurn(board, player);
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Input handling
+    // -------------------------------------------------------------------------
+
+    private char readInput() {
+        String line = scanner.nextLine();
+        return line.isEmpty() ? ' ' : line.toLowerCase().charAt(0);
+    }
+
+    private boolean processPlayerInput(char input) {
+        return switch (input) {
+            case 'w' -> movePlayer(0, -1);
+            case 's' -> movePlayer(0,  1);
+            case 'a' -> movePlayer(-1, 0);
+            case 'd' -> movePlayer(1,  0);
+            case 'e' -> castAbility();
+            case 'q' -> true;
+            default  -> { 
+                out.send("Invalid input. Please use w/a/s/d/e/q.");
+                yield false;
+            }
+        };
+    }
+
+    private boolean movePlayer(int dx, int dy) {
+        Position current = board.getPositionOf(player);
+        Position target  = new Position(current.GetX() + dx, current.GetY() + dy);
+        final boolean[] validMove = {true};
+        board.getCell(target).accept(new CellVisitor() {
+            @Override
+            public void visit(Wall wall) {
+                out.send("You cannot move there, it's a wall!");
+                validMove[0] = false;
+            }
+            @Override
+            public void visit(Floor floor) {
+                board.attemptMove(player, target);
+            }
+        });
+        return validMove[0];
+    }
+
+    private boolean castAbility() {
+        Position playerPos = board.getPositionOf(player);
+
+        List<Enemy> enemiesInRange = enemies.stream()
+                .filter(e -> playerPos.Range(board.getPositionOf(e)) < player.getAbilityRange())
+                .sorted(Comparator.comparingDouble(e -> playerPos.Range(board.getPositionOf(e))))
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+
+        return player.CastAbility(enemiesInRange, player);
+    }
+
+    // -------------------------------------------------------------------------
+    // Level loading
+    // -------------------------------------------------------------------------
+
+    private boolean loadLevel(String filePath) {
+        List<String> lines = readLevelFile(filePath);
+        if (lines == null || lines.isEmpty()) return false;
+
+        int rows = lines.size();
+        int cols = lines.get(0).length();
+        Cell[][] cells = new Cell[rows][cols];
+        enemies.clear();
+
+        for (int y = 0; y < rows; y++) {
+            String line = lines.get(y);
+            for (int x = 0; x < cols; x++) {
+                cells[y][x] = parseCell(line.charAt(x), new Position(x, y));
+            }
+        }
+
+        this.board = new GameBoard(cells);
+        return true;
+    }
+
+    /** Returns the file's lines, or null on failure. */
+    private List<String> readLevelFile(String filePath) {
+        File file = new File(filePath);
+        if (!file.exists()) return null;
+
+        List<String> lines = new ArrayList<>();
+        try (Scanner fileScanner = new Scanner(file)) {
+            while (fileScanner.hasNextLine()) {
+                String line = fileScanner.nextLine();
+                if (!line.trim().isEmpty()){
+                    lines.add(line);
+                }
+            }
+        } catch (Exception e) {
+            out.send("Error reading level file: " + e.getMessage());
+            return null;
+        }
+        return lines;
+    }
+
+    /** Convert a single map character into the correct Cell. */
+    private Cell parseCell(char c, Position pos) {
+        if (c == '#') return new Wall(pos);
+        Floor floor = new Floor(pos);
+        if (c == '@') {
+            placeUnit(floor, player);
+        } else if (c != '.') {
+            Enemy enemy = createEnemy(c);
+            if (enemy != null) {
+                enemy.setMessageCallback(out);
+                enemies.add(enemy);
+                placeUnit(floor, enemy);
+            }
+        }
+        return floor;
+    }
+
+    /** Helper: wrap a unit in an Occupant and set it on the floor tile. */
+    private void placeUnit(Floor floor, Unit unit) {
+        Occupant occ = new Occupant();
+        occ.SetUnit(unit);
+        floor.SetOccupant(occ);
+    }
+
+    // -------------------------------------------------------------------------
+    // Enemy factory
+    // -------------------------------------------------------------------------
+
+    private Enemy createEnemy(char c) {
+        return switch (c) {
+            // Regular monsters
+            case 's' -> new Monster('s', "Lannister Soldier", 80, 8, 3, 25, 3);
+            case 'k' -> new Monster('k', "Lannister Knight", 200, 14, 8, 50, 4);
+            case 'q' -> new Monster('q', "Queen's Guard", 400, 20, 15, 100, 5);
+            case 'z' -> new Monster('z', "Wright", 600, 30, 15, 100, 3);
+            case 'b' -> new Monster('b', "Bear-Wright", 1000, 75, 30, 250, 4);
+            case 'g' -> new Monster('g', "Giant-Wright", 1500, 100, 40, 500, 5);
+            case 'w' -> new Monster('w', "White Walker", 2000, 150, 50, 1000, 6);
+            // Bosses
+            case 'M' -> new Boss('M', "The Mountain", 1000, 60, 25, 500, 6, 5);
+            case 'C' -> new Boss('C', "Queen Cersei", 100, 10, 10, 1000, 1, 8);
+            case 'K' -> new Boss('K', "Night's King", 5000, 300, 150, 5000, 8, 3);
+            // Traps
+            case 'B' -> new Trap('B', "Bonus Trap", 1, 1, 1, 250, 1, 5);
+            case 'Q' -> new Trap('Q', "Queen's Trap", 250, 50, 10, 100, 3, 7);
+            case 'D' -> new Trap('D', "Death Trap", 500, 100, 20, 250, 1, 10);
+            default -> null;
+        };
+    }
+
+    // -------------------------------------------------------------------------
+    // Utility
+    // -------------------------------------------------------------------------
+
+    private boolean isPlayerAlive() {
+        return player.isAlive();
+    }
+}
+package roguelike;
+
+public class Main {
+    public static void main(String[] args) {
+        String path = (args.length > 0) ? args[0] : "src\\test\\resources";
+        GameManager gameManager = new GameManager(path);
+        gameManager.startGame();
+    }
+}
+package roguelike;
+
+public interface MessageCallback {
+    void send(String message);
+}
+package roguelike.model.units;
+
+import java.util.List;
+
+import roguelike.world.GameBoard;
+import roguelike.world.Position;
+
+public class Boss extends Monster implements HeroicUnit {
+    private int ability_frequency;
+    private int combat_ticks;
+
+
+    public Boss(char tile, String name, int hp_pool, int atk_pts, int def_pts, int exp_val, int vision_range, int ability_frequency) {
+        super(tile, name, hp_pool, atk_pts, def_pts, exp_val, vision_range);
+        this.ability_frequency = ability_frequency;
+        this.combat_ticks = 0;
+    }
+
+    @Override
+    public boolean CastAbility(List<Enemy> validTargets, Hero player) {
+        sendMsg(this.name + " shoots a devastating blast at " + player.name + "!");
+        int abilityDamage = this.atk_pts;
+        int defenseRoll = this.rand.nextInt(player.def_pts + 1);
+        return Attack(player, abilityDamage, defenseRoll);
+    }
+
+   @Override
+    public void processTurn(GameBoard board, Hero player) {
+        Position currentPos = board.getPositionOf(this);
+        Position playerPos = board.getPositionOf(player);
+        if (currentPos.Range(playerPos) < GetVisionRange()) {
+            if (combat_ticks == ability_frequency) {
+                combat_ticks = 0;
+                CastAbility(null, player);
+                return;
+            } else {
+                combat_ticks++;
+            }
+        } else {
+            combat_ticks = 0;
+        }
+        Position targetPos = super.Move(currentPos, playerPos);
+        board.attemptMove(this, targetPos);
+    }
+}
+package roguelike.model.units;
+
+import roguelike.world.GameBoard;
+
+public abstract class Enemy extends Unit {
+    protected int exp_val;
+    protected char tile;
+
+    public Enemy(char tile, String name, int hp_pool, int atk_pts, int def_pts, int exp_val) {
+        super(name, hp_pool, atk_pts, def_pts);
+        this.tile = tile;
+        this.exp_val = exp_val;
+    }
+
+    public abstract void processTurn(GameBoard board, Hero player);
+
+    public int GetExpVal() { 
+        return exp_val; 
+    }
+
+    @Override
+    public String description() {
+        return String.format("Name: %s | HP: %d/%d | ATK: %d | DEF: %d",
+                name, hp_current, hp_pool, atk_pts, def_pts);
+    }
+
+    @Override
+    public String toString() {
+        return String.valueOf(tile);
+    }
+
+    @Override
+    public void accept(OccupantVisitor visitor) {
+        visitor.visit(this);
+    }
+}
+package roguelike.model.units;
+
+public abstract class Hero extends Unit implements HeroicUnit  {
+    protected int exp;
+    protected int player_lvl;
+    protected int ability_range;
+    
+    public Hero(String name, int hp_pool, int atk_pts, int def_pts) {
+        super(name, hp_pool, atk_pts, def_pts);
+        this.exp = 0;
+        this.player_lvl = 1;
+    } 
+
+    @Override
+    public void Tick() {
+        // request input and move accordingly. If the hero is in range of an enemy, attack it.
+    }
+
+    public void GainExp(int exp) {
+        this.exp += exp;
+        while (this.exp >= 50*player_lvl) {
+            this.exp -= 50*player_lvl;
+            player_lvl++;
+            this.hp_pool += 10*player_lvl;
+            this.hp_current = this.hp_pool;
+            this.atk_pts += 4*player_lvl;
+            this.def_pts += player_lvl;
+        }
+    }
+
+    public int getAbilityRange() {
+        return ability_range;
+    }
+
+    @Override
+    public String description() {
+        return String.format("Name: %s | HP: %d/%d | ATK: %d | DEF: %d | Level: %d | EXP: %d",
+                name, hp_current, hp_pool, atk_pts, def_pts, player_lvl, exp);
+    }
+    
+    @Override
+    public String toString() {
+        if(this.hp_current > 0) {
+            return "@";
+        }
+        return "X";
+    }
+    
+    @Override
+    public void accept(OccupantVisitor visitor) {
+        visitor.visit(this);
+    }
+}
+package roguelike.model.units;
+
+import java.util.List;
+
+public interface HeroicUnit {
+    public boolean CastAbility(List<Enemy> validTargets, Hero player);
+}
+package roguelike.model.units;
+
+import java.util.List;
+
+public class Hunter extends Hero{
+    private int arrows;
+    private int tick_count;
+    private final int STARTING_ARROWS = 10;
+
+    public Hunter(String name, int hp_pool, int atk_pts, int def_pts, int range) {
+        super(name, hp_pool, atk_pts, def_pts);
+        this.ability_range = range;
+        arrows = STARTING_ARROWS;
+        tick_count = 0;
+    }
+
+    @Override
+    public void GainExp(int exp) {
+        int current_lvl = this.player_lvl;
+        super.GainExp(exp);
+        while(current_lvl < this.player_lvl) {
+            current_lvl++;
+            arrows += 10*current_lvl;
+            this.atk_pts += 2*current_lvl;
+            def_pts += current_lvl;
+        }
+    }
+
+    @Override
+    public void Tick() {
+        tick_count++;
+        if (tick_count == 10) {
+            tick_count = 0;
+            arrows += this.player_lvl;
+        }
+    }
+
+    @Override
+    public String description() {
+        return super.description() + String.format(" | Arrows: %d", arrows);
+    }
+
+    @Override
+    public boolean CastAbility(List<Enemy> validTargets, Hero player) {
+        if (arrows > 0) {
+            arrows--;            
+            if (!validTargets.isEmpty()) {
+                Enemy target = validTargets.get(0);
+                int defenseRoll = this.rand.nextInt(target.def_pts + 1);
+                boolean killed = Attack(target, this.atk_pts, defenseRoll);
+                if (killed) {
+                    this.GainExp(target.GetExpVal());
+                }
+            }
+        }
+        else {
+            sendMsg(this.name + " tried to shoot, but has no arrows left!");
+            return false;
+        }
+        return true; 
+    }
+}
+package roguelike.model.units;
+
+import java.util.List;
+
+public class Mage extends Hero {
+    private int mana_pool;
+    private int current_mana;
+    private int mana_cost;
+    private int spell_power;
+    private int hits_count;
+
+    public Mage(String name, int hp_pool, int atk_pts, int def_pts, int mana_pool, int mana_cost, int spell_power, int hits_count, int ability_range) {
+        super(name, hp_pool, atk_pts, def_pts);
+        this.mana_pool = mana_pool;
+        current_mana = mana_pool/4;
+        this.mana_cost = mana_cost;
+        this.spell_power = spell_power;
+        this.hits_count = hits_count;
+        this.ability_range = ability_range;
+    }
+
+    @Override
+    public void GainExp(int exp) {
+        int current_lvl = this.player_lvl;
+        super.GainExp(exp);
+        while(current_lvl < this.player_lvl) {
+            current_lvl++;
+            mana_pool += 25*current_lvl;
+            current_mana = Math.min(current_mana + mana_pool/4, mana_pool);
+            spell_power += 10*current_lvl;
+        }
+    }
+
+    @Override
+    public void Tick() {
+        super.Tick();
+        current_mana = Math.min(current_mana + this.player_lvl, mana_pool);
+    }
+
+    public String description() {
+        return super.description() + String.format(" | Mana: %d/%d | Spell Power: %d", current_mana, mana_pool, spell_power);
+    }
+
+    @Override
+    public boolean CastAbility(List<Enemy> validTargets, Hero player) {
+        if (current_mana >= mana_cost) {
+            current_mana -= mana_cost;
+            sendMsg(this.name + " cast Blizzard, costing " + mana_cost + " mana.");
+            int hits = 0;
+            while (hits < hits_count && !validTargets.isEmpty()) {
+                int randomIndex = (int)(Math.random() * validTargets.size());
+                Enemy target = validTargets.get(randomIndex);
+                int defenseRoll = this.rand.nextInt(target.def_pts + 1);
+                boolean killed = Attack(target, spell_power, defenseRoll);
+                if (killed) {
+                    this.GainExp(target.GetExpVal());
+                    validTargets.remove(randomIndex);
+                }
+                hits++;
+            }
+        }
+        else {
+            sendMsg(this.name + " tried to cast Blizzard but lacks mana (" + current_mana + "/" + mana_cost + ").");
+            return false;
+        }
+        return true; 
+    }
+}
+package roguelike.model.units;
+
+import roguelike.world.GameBoard;
+import roguelike.world.Position;
+
+public class Monster extends Enemy {
+    private int vision_range;
+
+    public Monster(char tile, String name, int hp_pool, int atk_pts, int def_pts, int exp_val, int vision_range) {
+        super(tile, name, hp_pool, atk_pts, def_pts, exp_val);
+        this.vision_range = vision_range;
+    }
+
+    @Override
+    public void processTurn(GameBoard board, Hero player) {
+        Position currentPos = board.getPositionOf(this);
+        Position targetPos = this.Move(currentPos, board.getPositionOf(player));
+        board.attemptMove(this, targetPos);
+    }
+
+    public Position Move(Position myPos, Position playerPos) {
+        double range = myPos.Range(playerPos);
+        if (range < vision_range) {
+            int dx = myPos.GetX() - playerPos.GetX();
+            int dy = myPos.GetY() - playerPos.GetY();
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx > 0) return new Position(myPos.GetX() - 1, myPos.GetY());
+                else return new Position(myPos.GetX() + 1, myPos.GetY());
+            } else {
+                if (dy > 0) return new Position(myPos.GetX(), myPos.GetY() - 1);
+                else return new Position(myPos.GetX(), myPos.GetY() + 1);
+            }
+        } 
+        else {
+            int move = this.rand.nextInt(5);
+            return switch (move) {
+                case 0 -> new Position(myPos.GetX() - 1, myPos.GetY());
+                case 1 -> new Position(myPos.GetX() + 1, myPos.GetY());
+                case 2 -> new Position(myPos.GetX(), myPos.GetY() - 1);
+                case 3 -> new Position(myPos.GetX(), myPos.GetY() + 1);
+                default -> myPos;
+            };
+        }
+    }
+
+    public int GetVisionRange() { 
+        return vision_range; 
+    }
+}
+package roguelike.model.units;
+
+public class Occupant {
+    private Unit unit;
+
+    public Occupant() {
+        unit = null;
+    }
+
+    public Unit GetUnit() { return unit; }
+
+    public void SetUnit(Unit unit) {
+        this.unit = unit;
+    }
+}
+package roguelike.model.units;
+
+public interface OccupantVisitor {
+    void visit(Hero hero);
+    void visit(Enemy enemy);
+}
+package roguelike.model.units;
+
+import java.util.List;
+
+public class Rogue extends Hero {
+    private final int MAX_ENERGY = 100;
+    private int energy;
+    private int cost;
+
+    public Rogue(String name, int hp_pool, int atk_pts, int def_pts, int cost) {
+        super(name, hp_pool, atk_pts, def_pts);
+        energy = MAX_ENERGY;
+        this.cost = cost;
+        ability_range = 2;
+    }
+
+    @Override
+    public void GainExp(int exp) {
+        int current_lvl = this.player_lvl;
+        super.GainExp(exp);
+        if(current_lvl < this.player_lvl) {
+             energy = MAX_ENERGY;
+        }
+        while(current_lvl < this.player_lvl) {
+            current_lvl++;
+            this.atk_pts += 3*current_lvl;
+        }
+    }
+
+    @Override
+    public void Tick() {
+        super.Tick();
+        energy = Math.min(energy + 10, MAX_ENERGY);
+    }
+
+    @Override
+    public String description() {
+        return super.description() + String.format(" | Energy: %d/%d", energy, MAX_ENERGY);
+    }
+
+    @Override
+    public boolean CastAbility(List<Enemy> validTargets, Hero player) { //Fan of Knives
+        if (energy >= cost) {
+            energy -= cost;
+            sendMsg(this.name + " used Fan of Knives!");
+            for (Enemy target : validTargets) {
+                int defenseRoll = this.rand.nextInt(target.def_pts + 1);
+                boolean killed = Attack(target, this.atk_pts, defenseRoll);
+                if (killed) {
+                    this.GainExp(target.GetExpVal());
+                }
+            }
+        }
+        else {
+            sendMsg(this.name + " tried to use Fan of Knives but lacks energy (" + energy + "/" + cost + ").");
+            return false;
+        }
+        return true; 
+    }
+}
+package roguelike.model.units;
+
+import roguelike.world.GameBoard;
+import roguelike.world.Position;
+
+public class Trap extends Enemy {
+    private int visibility_time;
+    private int invisibility_time;
+    private int ticks_count;
+    private boolean visible;
+    private boolean triggered = false;
+    private static final int TRAP_RANGE = 2;
+
+    public Trap(char tile, String name, int hp_pool, int atk_pts, int def_pts, int exp_val, int visibility_time, int invisibility_time) {
+        super(tile, name, hp_pool, atk_pts, def_pts, exp_val);
+        this.visibility_time = visibility_time;
+        this.invisibility_time = invisibility_time;
+        this.ticks_count = 0;
+        this.visible = true;
+    }
+
+    public boolean isTriggered() { return triggered; }
+
+    @Override
+    public void processTurn(GameBoard board, Hero player) {
+        Position currentPos = board.getPositionOf(this);
+        this.tickAndTrigger(player, currentPos, board.getPositionOf(player));
+    }
+
+    public void tickAndTrigger(Hero player, Position trapPos, Position playerPos) {
+        visible = ticks_count < visibility_time;
+        if (ticks_count == (visibility_time + invisibility_time)) {
+            ticks_count = 0;
+        } else {
+            ticks_count++;
+        }
+
+        if (!triggered && trapPos.Range(playerPos) < TRAP_RANGE) {
+            sendMsg("You triggered " + this.name + "!");
+            this.Combat(player);
+            this.triggered = true;
+            this.hp_current = 0;
+            player.GainExp(this.exp_val);
+        }
+    }
+
+    @Override
+    public void Tick() {
+        visible = ticks_count < visibility_time;
+        if (ticks_count == (visibility_time + invisibility_time)) {
+            ticks_count = 0;
+        } else {
+            ticks_count++;
+        }
+    }
+
+    @Override
+    public String toString() {
+        return (visible && !triggered) ? String.valueOf(super.tile) : ".";
+    }
+}
+package roguelike.model.units;
+
+import roguelike.MessageCallback;
+import java.util.Random;
+
+public abstract class Unit {
+    protected String name;
+    protected int hp_pool;
+    protected int hp_current;
+    protected int atk_pts;
+    protected int def_pts;
+    protected MessageCallback msgCallback;
+    protected Random rand = new Random();
+
+    public Unit(String name, int hp_pool, int atk_pts, int def_pts) {
+        this.name = name;
+        this.hp_pool = hp_pool;
+        this.hp_current = hp_pool;
+        this.atk_pts = atk_pts;
+        this.def_pts = def_pts;
+    }
+
+    public void setMessageCallback(MessageCallback msgCallback) {
+        this.msgCallback = msgCallback;
+    }
+    public void setRand(Random rand) {
+        this.rand = rand;
+    }
+
+    protected void sendMsg(String msg) {
+        if (this.msgCallback != null) {
+            this.msgCallback.send(msg);
+        }
+    }
+
+    //This method defines the behavior of any unit after a Game Tick.
+    public void Tick() {}
+
+    //This method defines the behavior of any unit when it engages in combat with another unit.
+    //This function returns true if the target was killed in combat, and false otherwise.
+    public boolean Combat(Unit target) {
+        sendMsg(this.name + " engaged in combat with " + target.name + ".");
+        sendMsg(this.description());
+        sendMsg(target.description());
+
+        int atk_roll = rollWithinRange(0, this.atk_pts + 1);
+        int def_roll = rollWithinRange(0, target.def_pts + 1);
+
+        sendMsg(this.name + " rolled " + atk_roll + " attack points.");
+        sendMsg(target.name + " rolled " + def_roll + " defense points.");
+        return Attack(target, atk_roll, def_roll); //true == killed target
+    }
+
+    public boolean Attack(Unit target, int atk_pts, int def_pts) {
+        int damage = Math.max(0, atk_pts - def_pts);
+        sendMsg(this.name + " dealt " + damage + " damage to " + target.name + ".");
+        target.hp_current -= damage;
+        if (target.hp_current <= 0) {
+            target.hp_current = 0;
+            sendMsg(target.name + " died.");
+            return true;
+        }
+        return false;
+    }
+
+    public boolean isAlive() {
+        return this.hp_current > 0;
+    }
+
+    protected int rollWithinRange(int min, int max) {
+        return rand.nextInt(max - min + 1) + min;
+    }
+
+    public abstract String description();
+
+    public abstract void accept(OccupantVisitor visitor);
+}
+package roguelike.model.units;
+
+import java.util.List;
+
+public class Warrior extends Hero {
+    private int ability_cooldown;
+    private int remaining_cooldown;
+    
+    public Warrior(String name, int hp_pool, int atk_pts, int def_pts, int ability_cooldown) {
+        super(name, hp_pool, atk_pts, def_pts);
+        this.ability_cooldown = ability_cooldown;
+        remaining_cooldown = 0;
+        this.ability_range = 3;
+    }
+
+    @Override
+    public void GainExp(int exp) {
+        int current_lvl = this.player_lvl;
+        super.GainExp(exp);
+        if(current_lvl < this.player_lvl) {
+             remaining_cooldown = 0;
+        }
+        while(current_lvl < this.player_lvl) {
+            current_lvl++;
+            this.hp_pool += 5*current_lvl;
+            this.hp_current = this.hp_pool;
+            this.atk_pts += 2*current_lvl;
+            this.def_pts += current_lvl;
+        }
+    }
+
+    @Override
+    public void Tick() {
+        super.Tick();
+        if (remaining_cooldown > 0) {
+            remaining_cooldown--;
+        }
+    }
+
+    public String description() {
+        return super.description() + String.format(" | Cooldown: %d/%d", remaining_cooldown, ability_cooldown);
+    }
+
+    @Override
+    public boolean CastAbility(List<Enemy> validTargets, Hero player) { //Cast Avenger's Shield
+        if (remaining_cooldown == 0) {
+            remaining_cooldown = ability_cooldown + 1;
+            this.hp_current = Math.min(this.hp_current + (10 * this.def_pts), this.hp_pool);
+            sendMsg(this.name + " used Avenger's Shield, healing for " + (10 * this.def_pts) + ".");
+            if (!validTargets.isEmpty()) {
+                int randomIndex = this.rand.nextInt(validTargets.size());
+                Enemy target = validTargets.get(randomIndex);
+                int damage = this.hp_pool / 10;
+                boolean killed = Attack(target, damage, 0); 
+                if (killed) {
+                    this.GainExp(target.GetExpVal());
+                }
+            }
+        } else {
+            sendMsg(this.name + " tried to use Avenger's Shield but it's on cooldown (" + remaining_cooldown + " remaining).");
+            return false;
+        }
+        return true;
+    }
+
+    
+}
+package roguelike.world;
+
+import roguelike.model.units.Occupant;
+
+public abstract class Cell {
+    protected Position pos;
+
+    public Cell(Position pos) {
+        this.pos = pos;
+    }
+
+    public Position GetPosition() { return pos; }
+    
+    public abstract void accept(CellVisitor visitor);
+
+    public abstract Occupant GetOccupant();
+}
+package roguelike.world;
+
+public interface CellVisitor {
+    void visit(Wall wall);
+    void visit(Floor floor);
+}
+package roguelike.world;
+
+import roguelike.model.units.Occupant;
+
+public class Floor extends Cell {
+    private Occupant occupant;
+
+    public Floor(Position pos) {
+        super(pos);
+        this.occupant = new Occupant();
+    }
+
+    public Occupant GetOccupant() { return occupant; }
+    
+    public boolean GetIsFree() { return occupant.GetUnit() == null; }
+
+    public void SetOccupant(Occupant occupant) {
+        this.occupant = occupant;
+    }
+
+    @Override
+    public void accept(CellVisitor visitor) {
+        visitor.visit(this);
+    }
+
+    @Override
+    public String toString() {
+        if (occupant != null && occupant.GetUnit() != null) {
+            return occupant.GetUnit().toString();
+        }
+        return ".";
+    }
+}
+package roguelike.world;
+
+import java.util.IdentityHashMap;
+
+import roguelike.model.units.Enemy;
+import roguelike.model.units.Hero;
+import roguelike.model.units.Occupant;
+import roguelike.model.units.OccupantVisitor;
+import roguelike.model.units.Unit;
+
+public class GameBoard {
+    private final IdentityHashMap<Unit, Position> unitPositions = new IdentityHashMap<>();
+    private final Cell[][] board;
+
+    public GameBoard(Cell[][] board) {
+        this.board = board;
+
+        //Initialize the Unit->Position mapping
+        for (int y = 0; y < board.length; y++) {
+            for (int x = 0; x < board[y].length; x++) {
+                Occupant occ = board[y][x].GetOccupant();
+                if (occ != null && occ.GetUnit() != null) {
+                    unitPositions.put(occ.GetUnit(), new Position(x, y));
+                }
+            }
+        }
+    }
+
+    public Cell getCell(Position p) {
+        return board[p.GetY()][p.GetX()];
+    }
+
+    public Occupant getOccupant(Position p) {
+        return getCell(p).GetOccupant();
+    }
+
+    public void setOccupant(Position p, Occupant o) {
+        getCell(p).accept(new CellVisitor() {
+            @Override
+            public void visit(Wall wall) {
+            }
+            
+            @Override
+            public void visit(Floor floor) {
+                //remove from map if needed, update board, then update map if needed
+
+                Unit unit = floor.GetOccupant().GetUnit();
+                // Removal from map should occur only when Cell unit position and map unit position match, to avoid removing a unit that has moved to a new position
+                if(p.equals(unitPositions.get(unit))) {
+                    unitPositions.remove(unit);
+                }
+                floor.SetOccupant(o);
+                // Add to map only if the new occupant has a unit (not an empty floor)
+                if (o.GetUnit() != null) {
+                    unitPositions.put(o.GetUnit(), p);
+                }
+            }
+        });
+    }
+
+    public void attemptMove(Unit movingUnit, Position targetPos) {
+        Position currentPos = getPositionOf(movingUnit);
+        if (currentPos.equals(targetPos)) {
+            return;
+        }
+        Cell targetCell = getCell(targetPos);
+        targetCell.accept(new CellVisitor() {
+            @Override
+            public void visit(Wall wall) {
+            }
+            
+            @Override
+            public void visit(Floor floor) {
+                handleFloorInteraction(floor, movingUnit, targetPos);
+            }
+        });
+    }
+
+    private void handleFloorInteraction(Floor floor, Unit movingUnit, Position targetPos) {
+        if (floor.GetIsFree()) {
+            Position currentPos = getPositionOf(movingUnit); 
+            executeMovement(movingUnit, currentPos, targetPos);
+        } else {
+            Unit targetUnit = floor.GetOccupant().GetUnit();
+            resolveEncounter(movingUnit, targetUnit);
+        }
+    }
+
+    private void resolveEncounter(Unit attacker, Unit defender) {
+        Position attackerPos = getPositionOf(attacker);
+        Position defenderPos = getPositionOf(defender);
+
+        defender.accept(new OccupantVisitor() {
+
+            @Override
+            public void visit(Hero targetHero) {
+                attacker.accept(new OccupantVisitor() {
+                    @Override public void visit(Hero movingHero) {}
+                    @Override public void visit(Enemy movingEnemy) {
+                        movingEnemy.Combat(targetHero);
+                    }
+                });
+            }
+
+            @Override
+            public void visit(Enemy targetEnemy) {
+                attacker.accept(new OccupantVisitor() {
+                    @Override public void visit(Hero movingHero) {
+                        boolean killed = movingHero.Combat(targetEnemy);
+                        if (killed) {
+                            movingHero.GainExp(targetEnemy.GetExpVal());
+                            executeMovement(movingHero, attackerPos, defenderPos);
+                        }
+                    }
+                    @Override public void visit(Enemy movingEnemy) {}
+                });
+            }
+        });
+    }
+
+    private void executeMovement(Unit unit, Position from, Position to) {
+        setOccupant(from, new Occupant());
+        Occupant newOccupant = new Occupant();
+        newOccupant.SetUnit(unit);
+        setOccupant(to, newOccupant);
+    }
+
+    public Position getPositionOf(Unit unit) {
+        return unitPositions.get(unit);
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        for (int y = 0; y < board.length; y++) {
+            for (int x = 0; x < board[y].length; x++) {
+                sb.append(board[y][x].toString());
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+}
+package roguelike.world;
+
+import java.util.Objects;
+
+public final class Position {
+    private final int x;
+    private final int y;
+
+    public Position(int x, int y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    public int GetX() { return x; }
+    public int GetY() { return y; }
+
+    public double Range(Position other) {
+        int dx = this.x - other.x;
+        int dy = this.y - other.y;
+        return Math.sqrt(dx*dx + dy*dy);
+    }
+
+    @Override 
+    public boolean equals(Object other) {
+        if(this == other) return true;
+        if(!(other instanceof Position)) return false;
+        Position otherPos = (Position) other;
+        return this.x == otherPos.x && this.y == otherPos.y;
+    }
+
+    @Override 
+    public int hashCode() {
+        return Objects.hash(x, y);
+    }
+
+    @Override 
+    public String toString() {
+        return String.format("(%d, %d)", x, y);
+    }
+}
+package roguelike.world;
+
+import roguelike.model.units.Occupant;
+
+public class Wall extends Cell {
+    
+    public Wall(Position pos) {
+        super(pos);
+    }
+
+    @Override
+    public void accept(CellVisitor visitor) {
+        visitor.visit(this);
+    }
+
+    @Override
+    public Occupant GetOccupant() {
+        return null;
+    }
+
+    @Override
+    public String toString() {
+        return "#";
+    }
+}
+package roguelike.model.units;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import roguelike.MessageCallback;
+import roguelike.world.Cell;
+import roguelike.world.Floor;
+import roguelike.world.GameBoard;
+import roguelike.world.Position;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+public class BossTest {
+    private MessageCallback dummyCallback;
+
+    @BeforeEach
+    public void setUp() {
+        dummyCallback = msg -> {};
+    }
+
+    @Test
+    public void testShoebodybopExactDamage() {
+        // Create a boss with 50 attack
+        Boss boss = new Boss('B', "Test Boss", 200, 50, 10, 100, 5, 2);
+        
+        // Hero with 0 defense to ensure exact damage calculation
+        Warrior dummyPlayer = new Warrior("Victim", 100, 10, 0, 3);
+        
+        boss.setMessageCallback(dummyCallback);
+        dummyPlayer.setMessageCallback(dummyCallback);
+
+        assertTrue(dummyPlayer.description().contains("HP: 100/100"));
+
+        boss.CastAbility(null, dummyPlayer);
+
+        // The player should take exactly 50 damage (Boss ATK) because DEF is 0
+        assertTrue(dummyPlayer.description().contains("HP: 50/100"), "Player should take exactly 50 damage (Boss ATK) because DEF is 0");
+    }
+
+    @Test
+    public void testAbilityFrequencyAndCombatLoop() {
+        Boss boss = new Boss('B', "Test Boss", 200, 30, 10, 100, 10, 2);
+        
+        // 0 DEF player
+        Warrior dummyPlayer = new Warrior("Victim", 100, 10, 0, 3); 
+        
+        boss.setMessageCallback(dummyCallback);
+        dummyPlayer.setMessageCallback(dummyCallback);
+
+        // put distance between boss and player to ensure only atk is shoebodybop
+        Cell[][] cells = new Cell[10][10];
+        for(int y=0; y<10; y++) for(int x=0; x<10; x++) cells[y][x] = new Floor(new Position(x,y));
+        GameBoard board = new GameBoard(cells);
+        
+        Occupant occBoss = new Occupant(); occBoss.SetUnit(boss);
+        Occupant occPlayer = new Occupant(); occPlayer.SetUnit(dummyPlayer);
+        
+        board.setOccupant(new Position(0, 0), occBoss);
+        board.setOccupant(new Position(5, 5), occPlayer);
+
+        //turn 1
+        boss.processTurn(board, dummyPlayer); 
+        assertTrue(dummyPlayer.description().contains("HP: 100/100"), "No damage should be dealt yet");
+        assertNull(board.getOccupant(new Position(0, 0)).GetUnit(), "Boss should have moved from starting position");
+        
+        //turn 2
+        boss.processTurn(board, dummyPlayer); 
+        assertTrue(dummyPlayer.description().contains("HP: 100/100"), "No damage should be dealt yet");
+        
+        //turn 3 - should cast ability
+        Position posBeforeCast = board.getPositionOf(boss);
+        boss.processTurn(board, dummyPlayer); 
+        
+        // check damage and movement logic
+        assertTrue(dummyPlayer.description().contains("HP: 70/100"), "Player should take exactly 30 damage from the boss ability");
+        
+        assertEquals(posBeforeCast.GetX(), board.getPositionOf(boss).GetX(), "Boss should not move on the turn he casts his ability");
+        assertEquals(posBeforeCast.GetY(), board.getPositionOf(boss).GetY(), "Boss should not move on the turn he casts his ability");
+    }
+}
+package roguelike.model.units;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import roguelike.MessageCallback;
+
+import java.util.ArrayList;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class HunterTest {
+    private MessageCallback dummyCallback;
+
+    @BeforeEach
+    public void setUp() {
+        dummyCallback = msg -> {};
+    }
+
+    @Test
+    public void testArrowMechanicsAndTick() {
+        Hero hunter = new Hunter("Test Hunter", 100, 10, 5, 5);
+        hunter.setMessageCallback(dummyCallback);
+        
+        //Check initial arrows and regeneration after ticks
+        assertTrue(hunter.description().contains("Arrows: 10"));
+        
+        for (int i = 0; i < 10; i++) {
+            hunter.Tick();
+        }
+        assertTrue(hunter.description().contains("Arrows: 11"), "Arrows regenerate every 10 ticks");
+    }
+
+    @Test
+    public void testSuccessfulShootAndLevelUp() {
+        Hero hunter = new Hunter("Test Hunter", 100, 10, 5, 5);
+        hunter.setMessageCallback(dummyCallback);
+
+        // Create a weak monster to gain level easily
+        Monster weakling = new Monster('w', "Weakling", 5, 0, 0, 50, 1);
+        weakling.setMessageCallback(dummyCallback);
+
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(weakling);
+
+        // start with 10 arrows
+        // shoot 1 - 9 arrows left
+        // gain lvl up from kill - +20 arrows - 29 arrows left
+        boolean castResult = hunter.CastAbility(targets, hunter);
+
+        assertTrue(castResult, "Cast should succeed");
+        assertTrue(weakling.description().contains("HP: 0/5"), "Monster should be dead");
+        assertTrue(hunter.description().contains("Level: 2"), "Hunter should level up to 2");
+        assertTrue(hunter.description().contains("Arrows: 29"), "Arrows should be 29 after shooting 1 and gaining 20 from level up");
+    }
+}
+package roguelike.model.units;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import roguelike.MessageCallback;
+
+import java.util.ArrayList;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class MageTest {
+    private MessageCallback dummyCallback;
+
+    @BeforeEach
+    public void setUp() {
+        dummyCallback = msg -> {};
+    }
+
+    @Test
+    public void testManaRegenAndFailedAbility() {
+        // Create a mage instance as a Hero
+        Hero mage = new Mage("Test Mage", 100, 10, 5, 100, 30, 20, 3, 5);
+        mage.setMessageCallback(dummyCallback);
+
+        // Check initial mana, mana regeneration and failed ability cast due to insufficient mana
+        assertTrue(mage.description().contains("Mana: 25/100"), "Starts with a quarter of mana pool");
+        
+        mage.Tick(); 
+        assertTrue(mage.description().contains("Mana: 26/100"), "Mana regenerates by level (1)");
+        
+        assertFalse(mage.CastAbility(new ArrayList<>(), mage), "Should fail casting without enough mana");
+    }
+
+    @Test
+    public void testSuccessfulBlizzardCast() {
+        // Create a mage instance as a Hero (with enough mana to cast)
+        Mage mage = new Mage("Test Mage", 100, 10, 5, 200, 30, 100, 3, 5);
+        mage.setMessageCallback(dummyCallback);
+
+        // Create a weak monster to be the target of the blizzard
+        Monster weakMonster = new Monster('m', "Weakling", 10, 0, 0, 50, 3);
+        weakMonster.setMessageCallback(dummyCallback);
+
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(weakMonster);
+
+        // Cast the Blizzard ability
+        boolean castResult = mage.CastAbility(targets, mage);
+
+        // Verify the results of the cast
+        assertTrue(castResult, "CastAbility should return true when mana is sufficient");
+        // Mana after level up explained: current_mana+mana_pool/4 = (50-30)+250/4 = 20+62=82 
+        assertTrue(mage.description().contains("Mana: 82/250"), "Mana should decrease by the cost (30)");
+        assertTrue(weakMonster.description().contains("HP: 0/10"), "Monster should be dead (0 HP)");
+        assertTrue(mage.description().contains("Level: 2"), "Mage should level up from the EXP gained");
+        assertTrue(targets.isEmpty(), "Dead monster should be removed from the valid targets list");
+    }
+}
+package roguelike.model.units;
+
+import org.junit.jupiter.api.Test;
+
+import roguelike.world.Position;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+public class MonsterTest {
+
+    @Test
+    public void testMovementBasicLogic() {
+        Monster monster = new Monster('m', "Test Monster", 50, 5, 2, 10, 3);
+        Position monsterPos = new Position(5, 5);
+        Position playerPos = new Position(5, 3); 
+        
+        Position newPos = monster.Move(monsterPos, playerPos);
+        
+        // predict movement toward the player
+        assertEquals(5, newPos.GetX());
+        assertEquals(4, newPos.GetY());
+    }
+}
+package roguelike.model.units;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import roguelike.MessageCallback;
+
+import java.util.ArrayList;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class RogueTest {
+    private MessageCallback dummyCallback;
+
+    @BeforeEach
+    public void setUp() {
+        dummyCallback = msg -> {};
+    }
+
+    @Test
+    public void testEnergyAndFailedFanOfKnives() {
+        Hero rogue = new Rogue("Test Rogue", 100, 10, 5, 20);
+        rogue.setMessageCallback(dummyCallback);
+
+        assertTrue(rogue.description().contains("Energy: 100/100"));
+        
+        // Leveling up replenishes energy so we need an enemy that will not die
+        Monster tank = new Monster('t', "Tank", 1000, 0, 1000, 0, 1);
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(tank);
+
+        assertTrue(rogue.CastAbility(targets, rogue));
+        assertTrue(rogue.description().contains("Energy: 80/100"), "Energy should decrease to 80");
+        
+        rogue.Tick(); 
+        assertTrue(rogue.description().contains("Energy: 90/100"), "Energy should regenerate by 10 on tick");
+    }
+
+    @Test
+    public void testSuccessfulFanOfKnivesAndLevelUp() {
+        Hero rogue = new Rogue("Test Rogue", 100, 10, 5, 20);
+        rogue.setMessageCallback(dummyCallback);
+
+        // Create a weak monster to gain level easily
+        Monster weakling = new Monster('m', "Weakling", 5, 0, 0, 50, 1);
+        weakling.setMessageCallback(dummyCallback);
+
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(weakling);
+
+        // Cast - kill the target, check level up logic
+        boolean castResult = rogue.CastAbility(targets, rogue);
+
+        assertTrue(castResult, "Cast should succeed");
+        assertTrue(weakling.description().contains("HP: 0/5"), "Monster should be dead");
+        assertTrue(rogue.description().contains("Level: 2"), "Rogue should level up to 2");
+        assertTrue(rogue.description().contains("Energy: 100/100"), "Energy should be refilled to MAX after level up");
+    }
+}
+package roguelike.model.units;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import roguelike.MessageCallback;
+import roguelike.world.Position;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+public class TrapTest {
+    private MessageCallback dummyCallback;
+
+    @BeforeEach
+    public void setUp() {
+        dummyCallback = msg -> {};
+    }
+
+    @Test
+    public void testSuicideMechanic() {
+        Trap trap = new Trap('T', "Test Trap", 100, 10, 5, 20, 3, 3);
+        Warrior dummyPlayer = new Warrior("Victim", 100, 0, 0, 3);
+        
+        trap.setMessageCallback(dummyCallback);
+        dummyPlayer.setMessageCallback(dummyCallback);
+
+        Position trapPos = new Position(2, 2);
+        Position playerPos = new Position(2, 3); 
+
+        trap.tickAndTrigger(dummyPlayer, trapPos, playerPos);
+
+        assertTrue(trap.description().contains("HP: 0/100"), "Trap HP drops to 0 upon trigger");
+        assertTrue(trap.isTriggered(), "Trap marked as triggered");
+        assertTrue(dummyPlayer.description().contains("EXP: 20"), "Player gains trap EXP");
+    }
+}
+package roguelike.model.units;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import roguelike.MessageCallback;
+
+
+import java.util.ArrayList;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class WarriorTest {
+    private MessageCallback dummyCallback;
+
+    @BeforeEach
+    public void setUp() {
+        dummyCallback = msg -> {}; 
+    }
+
+    @Test
+    public void testLevelUpAndCooldownMechanic() {
+        // Create a Warrior instance as a Hero
+        Hero warrior = new Warrior("Test Warrior", 100, 10, 5, 3);
+        warrior.setMessageCallback(dummyCallback);
+
+        // Level up
+        warrior.GainExp(50); 
+        assertTrue(warrior.description().contains("Level: 2"));
+        
+        // Cast Ability and check cooldown
+        List<Enemy> targets = new ArrayList<>();
+        assertTrue(warrior.CastAbility(targets, warrior), "Ability should cast successfully when cooldown is 0");
+
+        assertTrue(warrior.description().contains("Cooldown: 4/3") || warrior.description().contains("Cooldown: 3/3"));
+        assertFalse(warrior.CastAbility(targets, warrior), "Ability should fail when on cooldown");
+    }
+}
+package roguelike.world;
+
+import java.util.Random;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import roguelike.model.units.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+public class GameBoardTest {
+    private GameBoard board;
+    private Warrior player;
+
+    @BeforeEach
+    public void setUp() {
+        Cell[][] cells = new Cell[3][3];
+        for (int y = 0; y < 3; y++) {
+            for (int x = 0; x < 3; x++) {
+                if (x == 1 && y == 0) {
+                    cells[y][x] = new Wall(new Position(x, y));
+                } else {
+                    cells[y][x] = new Floor(new Position(x, y));
+                }
+            }
+        }
+        board = new GameBoard(cells);
+        player = new Warrior("Test Player", 100, 10, 5, 3);
+        player.setMessageCallback(msg -> {});
+    }
+
+    @Test
+    public void testMoveToEmptyFloor() {
+        Occupant occ = new Occupant();
+        occ.SetUnit(player);
+        board.setOccupant(new Position(0, 0), occ); 
+
+        Position targetPos = new Position(0, 1); 
+        board.attemptMove(player, targetPos);
+
+        assertNull(board.getOccupant(new Position(0, 0)).GetUnit(), "Old position empty");
+        assertEquals(player, board.getOccupant(targetPos).GetUnit(), "Player at new position");
+    }
+
+    @Test
+    public void testMoveToWallIsBlocked() {
+        Occupant occ = new Occupant();
+        occ.SetUnit(player);
+        board.setOccupant(new Position(0, 0), occ);
+
+        Position targetPos = new Position(1, 0); 
+        
+        final boolean[] hitWall = {false};
+        board.getCell(targetPos).accept(new CellVisitor() {
+            @Override
+            public void visit(Wall wall) { hitWall[0] = true; }
+            @Override
+            public void visit(Floor floor) { board.attemptMove(player, targetPos); }
+        });
+
+        assertTrue(hitWall[0], "Visitor identified wall");
+        assertEquals(player, board.getOccupant(new Position(0, 0)).GetUnit(), "Player remained in place");
+    }
+
+    private Occupant occupantOf(Unit unit) {
+        Occupant occ = new Occupant();
+        occ.SetUnit(unit);
+        return occ;
+    }
+
+    @Test
+    public void placedUnitIsFound() {
+        board.setOccupant(new Position(0, 0), occupantOf(player));
+        assertEquals(new Position(0, 0), board.getPositionOf(player));
+    }
+
+    @Test
+    public void neverPlacedUnitReturnsNull() {
+        Warrior stranger = new Warrior("Stranger", 100, 10, 5, 3);
+        assertNull(board.getPositionOf(stranger));
+    }
+
+    @Test
+    public void movedUnitHasNewPosition() {
+        board.setOccupant(new Position(0, 0), occupantOf(player));
+        board.attemptMove(player, new Position(0, 1));
+        assertEquals(new Position(0, 1), board.getPositionOf(player));
+    }
+
+    @Test
+    public void removedUnitReturnsNull() {
+        Position pos = new Position(0, 0);
+        board.setOccupant(pos, occupantOf(player));
+        board.setOccupant(pos, new Occupant());
+        assertNull(board.getPositionOf(player));
+    }
+
+    @Test
+    public void seededRandProducesDeterministicCombat() {
+        Warrior attacker1 = new Warrior("Attacker", 100, 10, 5, 3);
+        Warrior attacker2 = new Warrior("Attacker", 100, 10, 5, 3);
+
+        Monster defender1 = new Monster('m', "Defender", 5, 5, 10, 3, 1);
+        Monster defender2 = new Monster('m', "Defender", 5, 5, 10, 3, 1);
+
+
+        Random rand = new Random(25); // fixed seed for deterministic test
+        attacker1.setRand(rand);
+        attacker2.setRand(rand);
+
+        boolean result1 = attacker1.Combat(defender1);
+        boolean result2 = attacker2.Combat(defender2);
+        assertEquals(result1, result2, "Combat results should be the same with the same seed");
+        assertEquals(defender1.description(), defender2.description(), "Defender states should be the same with the same seed");
+    }
+
+    @Test 
+    public void guaranteedKillAndGuaranteedMiss() {
+        Warrior attacker1 = new Warrior("Attacker", 100, 1_000_000, 0, 3);
+        Warrior attacker2 = new Warrior("Attacker", 100, 10, 0, 3);
+        
+        Monster defender1 = new Monster('m', "Defender", 1, 1, 0, 3, 1);
+        Monster defender2 = new Monster('m', "Defender", 100, 1, 1_000_000, 3, 1);
+
+        Random rand = new Random(42); // fixed seed for deterministic test
+        attacker1.setRand(rand);
+
+        boolean result1 = attacker1.Combat(defender1);
+        assertTrue(result1, "Defender should die after combat - 1 in a million chance to miss");
+
+        String defender2_desc_before = defender2.description();
+        attacker2.setRand(rand);
+
+        boolean result2 = attacker2.Combat(defender2);
+        assertFalse(result2, "Defender should survive after combat - 1 in a million chance to hit");
+        assertEquals(defender2_desc_before, defender2.description(), "Defender state should be unchanged after combat");
+    }
+
+    @Test
+    public void killingAnEnemyAndMovingIntoItsCellUpdatesBothUnits() {
+        // Huge attack against 1 HP and 0 DEF: the kill is effectively guaranteed
+        // The random seed is fixed to ensure deterministic behavior in the test
+        Warrior killer = new Warrior("Killer", 100, 1_000_000, 0, 3);
+        killer.setMessageCallback(msg -> {});
+        Monster victim = new Monster('m', "Victim", 1, 0, 0, 0, 1);
+        victim.setMessageCallback(msg -> {});
+
+        Random rand = new Random(42); // fixed seed for deterministic test
+        killer.setRand(rand);
+        victim.setRand(rand);
+
+        board.setOccupant(new Position(0, 0), occupantOf(killer));
+        board.setOccupant(new Position(0, 1), occupantOf(victim));
+
+        board.attemptMove(killer, new Position(0, 1));
+
+        assertNull(board.getPositionOf(victim), "Dead enemy should leave the map");
+        assertEquals(new Position(0, 1), board.getPositionOf(killer));
+    }
+
+    @Test
+    public void staleClearDoesNotRemoveMovedUnit() {
+        Position from = new Position(0, 0);
+        Position to = new Position(0, 1);
+
+        board.setOccupant(from, occupantOf(player));
+        // wrong order on purpose: fill the new cell first, clear the old cell second
+        board.setOccupant(to, occupantOf(player));
+        board.setOccupant(from, new Occupant());
+
+        assertEquals(to, board.getPositionOf(player), "Stale clear must not delete the new entry");
+    }
+}
+package roguelike.world;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class PositionTest {
+
+    @Test
+    public void equalPositionsTest() {
+        Position p1 = new Position(1,2);
+        Position p2 = new Position(1,2);
+        assertEquals(p1, p2, "Positions with same coordinates should be equal");
+    }
+
+    @Test
+    public void differentPositionsTest() {
+        Position p1 = new Position(1,2);
+        Position p2 = new Position(2,2);
+        assertNotEquals(p1, p2, "Positions with different x coordinates should not be equal");
+        
+        Position p3 = new Position(1,3);
+        assertNotEquals(p1, p3, "Positions with different y coordinates should not be equal");
+    }
+
+    @Test
+    public void hashCodeConsistencyTest() {
+        Position p1 = new Position(1,2);
+        Position p2 = new Position(1,2);
+        assertEquals(p1.hashCode(), p2.hashCode(), "Equal positions should have the same hash code");
+    }
+
+    @Test
+    public void nullPositionTest() {
+        Position p1 = new Position(1,2);
+        assertNotEquals(p1, null, "Position should not be equal to null");
+    }
+
+    @Test
+    public void hashSetPositionBehaviorTest() {
+        java.util.HashSet<Position> positionSet = new java.util.HashSet<>();
+        Position p1 = new Position(1,2);
+        Position p2 = new Position(1,2);
+        positionSet.add(p1);
+        assertTrue(positionSet.contains(p2), "HashSet should recognize equal positions");
+
+        positionSet.add(p2);
+        assertEquals(1, positionSet.size(), "HashSet should not allow duplicate positions");
+    }
+}

@@ -240,6 +240,9 @@ public class GameManager {
         return validMove[0];
     }
 
+    // Helper Function: use stream() to create an arraylist of all enemies in hero's ability_range.
+    // Sorted by proximity (closer range)
+    // return true if ability was cast, false otherwise
     private boolean castAbility() {
         Position playerPos = board.getPositionOf(player);
 

@@ -53,4 +53,27 @@ public class HunterTest {
         assertTrue(hunter.description().contains("Level: 2"), "Hunter should level up to 2");
         assertTrue(hunter.description().contains("Arrows: 29"), "Arrows should be 29 after shooting 1 and gaining 20 from level up");
     }
+
+    @Test 
+    public void testDeterminismInCastAbility() {
+        Hero hero1 = new Hunter("hawkeye", 100, 10, 10, 100);
+        Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        List<Enemy> monsters = new ArrayList<>();
+
+        monsters.add(m1);
+        hero1.rand.setSeed(50);
+
+        hero1.CastAbility(monsters, hero1);
+
+        Hero hero2 = new Hunter("hawkeye", 100, 10, 10, 100);
+        Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        
+        monsters.remove(0);
+        monsters.add(m2);
+        hero2.rand.setSeed(50);
+
+        hero2.CastAbility(monsters, hero2);
+
+        assertEquals(m1.description(), m2.description());
+    }
 }

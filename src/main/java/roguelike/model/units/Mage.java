@@ -48,9 +48,13 @@ public class Mage extends Hero {
             sendMsg(this.name + " cast Blizzard, costing " + mana_cost + " mana.");
             int hits = 0;
             while (hits < hits_count && !validTargets.isEmpty()) {
-                int randomIndex = (int)(Math.random() * validTargets.size());
+                int randomIndex = this.rand.nextInt(validTargets.size());
+                System.out.println("Selected enemy: " + randomIndex);
+
                 Enemy target = validTargets.get(randomIndex);
                 int defenseRoll = this.rand.nextInt(target.def_pts + 1);
+                System.out.println("defender def roll: " + defenseRoll);
+
                 boolean killed = Attack(target, spell_power, defenseRoll);
                 if (killed) {
                     this.GainExp(target.GetExpVal());

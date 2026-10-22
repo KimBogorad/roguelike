@@ -78,4 +78,22 @@ public class BossTest {
         assertEquals(posBeforeCast.GetX(), board.getPositionOf(boss).GetX(), "Boss should not move on the turn he casts his ability");
         assertEquals(posBeforeCast.GetY(), board.getPositionOf(boss).GetY(), "Boss should not move on the turn he casts his ability");
     }
+
+    @Test 
+    public void testDeterminismInCastAbility() {
+        Hero hero1 = new Warrior("ted", 100, 10, 10, 3);
+        Boss boss1 = new Boss('W', "Warden", 1_000, 100, 150, 500, 10, 1);
+
+        boss1.rand.setSeed(42);
+
+        boss1.CastAbility(null, hero1);
+
+        Hero hero2 = new Warrior("ted", 100, 10, 10, 3);
+        Boss boss2 = new Boss('W', "Warden", 1_000, 100, 150, 500, 10, 1);
+
+        boss2.rand.setSeed(42);
+        boss2.CastAbility(null, hero2);
+
+        assertEquals(hero1.description(), hero2.description(), "with a determined seed, cast ability should affect identically.");
+    }
 }
