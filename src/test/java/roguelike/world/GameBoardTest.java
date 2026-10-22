@@ -97,6 +97,47 @@ public class GameBoardTest {
     }
 
     @Test
+    public void seededRandProducesDeterministicCombat() {
+        Warrior attacker1 = new Warrior("Attacker", 100, 10, 5, 3);
+        Warrior attacker2 = new Warrior("Attacker", 100, 10, 5, 3);
+
+        Monster defender1 = new Monster('m', "Defender", 5, 5, 10, 3, 1);
+        Monster defender2 = new Monster('m', "Defender", 5, 5, 10, 3, 1);
+
+
+        Random rand = new Random(25); // fixed seed for deterministic test
+        attacker1.setRand(rand);
+        attacker2.setRand(rand);
+
+        boolean result1 = attacker1.Combat(defender1);
+        boolean result2 = attacker2.Combat(defender2);
+        assertEquals(result1, result2, "Combat results should be the same with the same seed");
+        assertEquals(defender1.description(), defender2.description(), "Defender states should be the same with the same seed");
+    }
+
+    @Test 
+    public void guaranteedKillAndGuaranteedMiss() {
+        Warrior attacker1 = new Warrior("Attacker", 100, 1_000_000, 0, 3);
+        Warrior attacker2 = new Warrior("Attacker", 100, 10, 0, 3);
+        
+        Monster defender1 = new Monster('m', "Defender", 1, 1, 0, 3, 1);
+        Monster defender2 = new Monster('m', "Defender", 100, 1, 1_000_000, 3, 1);
+
+        Random rand = new Random(42); // fixed seed for deterministic test
+        attacker1.setRand(rand);
+
+        boolean result1 = attacker1.Combat(defender1);
+        assertTrue(result1, "Defender should die after combat - 1 in a million chance to miss");
+
+        String defender2_desc_before = defender2.description();
+        attacker2.setRand(rand);
+
+        boolean result2 = attacker2.Combat(defender2);
+        assertFalse(result2, "Defender should survive after combat - 1 in a million chance to hit");
+        assertEquals(defender2_desc_before, defender2.description(), "Defender state should be unchanged after combat");
+    }
+
+    @Test
     public void killingAnEnemyAndMovingIntoItsCellUpdatesBothUnits() {
         // Huge attack against 1 HP and 0 DEF: the kill is effectively guaranteed
         // The random seed is fixed to ensure deterministic behavior in the test
