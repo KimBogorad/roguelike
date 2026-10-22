@@ -1,28 +1,45 @@
 package roguelike;
 
+import roguelike.model.units.Boss;
+import roguelike.model.units.Enemy;
+import roguelike.model.units.Monster;
+import roguelike.model.units.Trap;
+
+public class EnemyFactory {
+    public Enemy createEnemy(char c) {
+        return switch (c) {
+            // Regular monsters
+            case 's' -> new Monster('s', "Lannister Soldier", 80, 8, 3, 25, 3);
+            case 'k' -> new Monster('k', "Lannister Knight", 200, 14, 8, 50, 4);
+            case 'q' -> new Monster('q', "Queen's Guard", 400, 20, 15, 100, 5);
+            case 'z' -> new Monster('z', "Wright", 600, 30, 15, 100, 3);
+            case 'b' -> new Monster('b', "Bear-Wright", 1000, 75, 30, 250, 4);
+            case 'g' -> new Monster('g', "Giant-Wright", 1500, 100, 40, 500, 5);
+            case 'w' -> new Monster('w', "White Walker", 2000, 150, 50, 1000, 6);
+            // Bosses
+            case 'M' -> new Boss('M', "The Mountain", 1000, 60, 25, 500, 6, 5);
+            case 'C' -> new Boss('C', "Queen Cersei", 100, 10, 10, 1000, 1, 8);
+            case 'K' -> new Boss('K', "Night's King", 5000, 300, 150, 5000, 8, 3);
+            // Traps
+            case 'B' -> new Trap('B', "Bonus Trap", 1, 1, 1, 250, 1, 5);
+            case 'Q' -> new Trap('Q', "Queen's Trap", 250, 50, 10, 100, 3, 7);
+            case 'D' -> new Trap('D', "Death Trap", 500, 100, 20, 250, 1, 10);
+            default -> null;
+        };
+    }
+    
+}
+package roguelike;
+
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
 
-import roguelike.model.units.Boss;
-import roguelike.model.units.Enemy;
-import roguelike.model.units.Hero;
-import roguelike.model.units.Hunter;
-import roguelike.model.units.Mage;
-import roguelike.model.units.Monster;
-import roguelike.model.units.Occupant;
-import roguelike.model.units.Rogue;
-import roguelike.model.units.Trap;
-import roguelike.model.units.Unit;
-import roguelike.model.units.Warrior;
-import roguelike.world.Cell;
-import roguelike.world.CellVisitor;
-import roguelike.world.Floor;
-import roguelike.world.GameBoard;
-import roguelike.world.Position;
-import roguelike.world.Wall;
+import roguelike.model.units.*;
+import roguelike.world.*;
+import roguelike.ui.GameView;
 
 public class GameManager {
 
@@ -33,18 +50,22 @@ public class GameManager {
     private GameBoard board;
     private Hero player;
     private List<Enemy> enemies;
-    private final Scanner scanner;
-    private final MessageCallback out;
+    
+    
     private int currentLevel;
     private String levelsDir;
+    private final EnemyFactory enemyFactory;
+    private final HeroFactory heroFactory;
+    private final GameView view;
 
     /** Inject a custom output sink. */
-    public GameManager(String path) {
-        this.out = System.out::println;
-        this.scanner = new Scanner(System.in);
+    public GameManager(String path, GameView view) {
         this.enemies = new ArrayList<>();
         this.currentLevel = 1;
         this.levelsDir = path;
+        this.enemyFactory = new EnemyFactory();
+        this.heroFactory = new HeroFactory();
+        this.view = view;
     }
 
     // -------------------------------------------------------------------------
@@ -56,8 +77,8 @@ public class GameManager {
         while (playAgain) {
             this.currentLevel = 1;
             this.enemies.clear();
-            clearScreen();
-            out.send("Welcome to D&D!");
+            view.clearScreen();
+            view.displayMessage("Welcome to D&D!");
             selectPlayer();
             while (currentLevel <= MAX_LEVELS && isPlayerAlive()) {
                 String levelFile;
@@ -67,35 +88,41 @@ public class GameManager {
                     levelFile = levelsDir + File.separator + LEVEL_FILE_PREFIX + currentLevel + LEVEL_FILE_SUFFIX;
                 }
                 if (!loadLevel(levelFile)) {
-                    out.send("Error: Could not find or load -> " + levelFile);
-                    out.send("Please check if the file path is correct. Exiting game.");
+                    view.displayMessage("Error: Could not find or load -> " + levelFile);
+                    view.displayMessage("Please check if the file path is correct. Exiting game.");
                     return;
                 }
-                out.send("--- Loading Level " + currentLevel + " ---");
+                view.displayMessage("--- Loading Level " + currentLevel + " ---");
                 playLevel();
 
                 if (isPlayerAlive()) {
                     currentLevel++;
                 }
             }
-            out.send(isPlayerAlive() ? "You won!" : "Game Over.");
+            view.displayMessage(isPlayerAlive() ? "You won!" : "Game Over.");
             boolean validChoice = false;
             while (!validChoice) {
-                out.send("Do you want to restart (y/n)?");
-                out.send("If not there will be consequences Muwhahaha.");
-                String choice = scanner.nextLine().trim().toLowerCase();
+                view.displayMessage("Do you want to restart (y/n)?");
+                view.displayMessage("If not there will be consequences Muwhahaha.");
+                char choice = ' ';
+                try {
+                    choice = view.readChar();
+                } catch (IllegalArgumentException e) {
+                    view.displayMessage("Invalid input. Please enter a single character.");
+                    continue;
+                }
                 switch (choice) {
-                    case "y" -> {
-                        clearScreen();
+                    case 'y' -> {
+                        view.clearScreen();
                         validChoice = true;
                     }
-                    case "n" -> {
-                        out.send("Thank you for playing, deleting system32...");
+                    case 'n' -> {
+                        view.displayMessage("Thank you for playing, deleting system32...");
                         validChoice = true;
                         playAgain = false;
                     }
                     default -> {
-                        out.send("Invalid input! Please enter exactly 'y' or 'n'.");
+                        view.displayMessage("Invalid input! Please enter exactly 'y' or 'n'.");
                     }
                 }
             }
@@ -105,61 +132,37 @@ public class GameManager {
     // -------------------------------------------------------------------------
     // Player selection
     // -------------------------------------------------------------------------
-    private void clearScreen() {
-        try {
-            if (System.getProperty("os.name").toLowerCase().contains("windows")) {
-                new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
-            } else {
-                System.out.print("\033[H\033[2J");
-                System.out.flush();
-            }
-        } catch (Exception e) {
-            for (int i = 0; i < 50; ++i) System.out.println();
-        }
-    }
 
     private void selectPlayer() {
-        out.send("Select player:");
-        out.send("1. Jon Snow     (Warrior)");
-        out.send("2. The Hound    (Warrior)");
-        out.send("3. Melisandre   (Mage)");
-        out.send("4. Thoros of Myr (Mage)");
-        out.send("5. Arya Stark   (Rogue)");
-        out.send("6. Bronn        (Rogue)");
-        out.send("7. Ygritte      (Hunter)");
+        view.displayMessage("Select player:");
+        view.displayMessage("1. Jon Snow     (Warrior)");
+        view.displayMessage("2. The Hound    (Warrior)");
+        view.displayMessage("3. Melisandre   (Mage)");
+        view.displayMessage("4. Thoros of Myr (Mage)");
+        view.displayMessage("5. Arya Stark   (Rogue)");
+        view.displayMessage("6. Bronn        (Rogue)");
+        view.displayMessage("7. Ygritte      (Hunter)");
 
         int choice = -1;
         boolean validChoice = false;
         while (!validChoice){
             try {
-                String input = scanner.nextLine().trim();
-                choice = Integer.parseInt(input);
+                choice = view.readInt();
                 if (choice >= 1 && choice <= 7){
                     validChoice = true;
                 } else {
-                    out.send("Invalid choice. Please enter a number between 1 and 7.");
+                    view.displayMessage("Invalid choice. Please enter a number between 1 and 7.");
                 }
 
             } catch (NumberFormatException e) {
-                out.send("Invalid input. Please enter a valid number.");
+                view.displayMessage("Invalid input. Please enter a valid number.");
             }
         }
-        player = createPlayer(choice);
-        player.setMessageCallback(out);
+        player = heroFactory.createPlayer(choice);
+        player.setMessageCallback(m -> view.displayMessage(m));
     }
 
-    private Hero createPlayer(int choice) {
-        return switch (choice) {
-            case 1 -> new Warrior("Jon Snow", 300, 30, 4, 3);
-            case 2 -> new Warrior("The Hound", 400, 20, 6, 5);
-            case 3 -> new Mage("Melisandre", 100, 5, 1, 300, 30, 15, 5, 6);
-            case 4 -> new Mage("Thoros of Myr", 250, 25, 4, 150, 20, 20, 3, 4);
-            case 5 -> new Rogue("Arya Stark", 150, 40, 2, 20);
-            case 6 -> new Rogue("Bronn", 250, 35, 3, 50);
-            case 7 -> new Hunter("Ygritte", 220, 30, 2, 6);
-            default -> new Warrior("Jon Snow", 300, 30, 4, 3);
-        };
-    }
+    
 
     // -------------------------------------------------------------------------
     // Game loop
@@ -167,10 +170,15 @@ public class GameManager {
 
     private void playLevel() {
         while (isPlayerAlive() && !enemies.isEmpty()) {
-            out.send(board.toString());
-            out.send(player.description());
-            char input = readInput();
-            clearScreen();
+            view.drawBoard(board.toString(), player.description());
+            char input = ' ';
+            try {
+                input = view.readChar();
+            } catch (IllegalArgumentException e) {
+                view.displayMessage("Invalid input. Please enter a single character.");
+                continue;
+            } 
+            view.clearScreen();
             boolean validTurn = processPlayerInput(input);
             if (validTurn) {
                 player.Tick();
@@ -202,11 +210,6 @@ public class GameManager {
     // Input handling
     // -------------------------------------------------------------------------
 
-    private char readInput() {
-        String line = scanner.nextLine();
-        return line.isEmpty() ? ' ' : line.toLowerCase().charAt(0);
-    }
-
     private boolean processPlayerInput(char input) {
         return switch (input) {
             case 'w' -> movePlayer(0, -1);
@@ -216,7 +219,7 @@ public class GameManager {
             case 'e' -> castAbility();
             case 'q' -> true;
             default  -> { 
-                out.send("Invalid input. Please use w/a/s/d/e/q.");
+                view.displayMessage("Invalid input. Please use w/a/s/d/e/q.");
                 yield false;
             }
         };
@@ -229,7 +232,7 @@ public class GameManager {
         board.getCell(target).accept(new CellVisitor() {
             @Override
             public void visit(Wall wall) {
-                out.send("You cannot move there, it's a wall!");
+                view.displayMessage("You cannot move there, it's a wall!");
                 validMove[0] = false;
             }
             @Override
@@ -240,6 +243,9 @@ public class GameManager {
         return validMove[0];
     }
 
+    // Helper Function: use stream() to create an arraylist of all enemies in hero's ability_range.
+    // Sorted by proximity (closer range)
+    // return true if ability was cast, false otherwise
     private boolean castAbility() {
         Position playerPos = board.getPositionOf(player);
 
@@ -289,7 +295,7 @@ public class GameManager {
                 }
             }
         } catch (Exception e) {
-            out.send("Error reading level file: " + e.getMessage());
+            view.displayMessage("Error reading level file: " + e.getMessage());
             return null;
         }
         return lines;
@@ -302,9 +308,9 @@ public class GameManager {
         if (c == '@') {
             placeUnit(floor, player);
         } else if (c != '.') {
-            Enemy enemy = createEnemy(c);
+            Enemy enemy = enemyFactory.createEnemy(c);
             if (enemy != null) {
-                enemy.setMessageCallback(out);
+                enemy.setMessageCallback(m -> view.displayMessage(m));
                 enemies.add(enemy);
                 placeUnit(floor, enemy);
             }
@@ -320,32 +326,6 @@ public class GameManager {
     }
 
     // -------------------------------------------------------------------------
-    // Enemy factory
-    // -------------------------------------------------------------------------
-
-    private Enemy createEnemy(char c) {
-        return switch (c) {
-            // Regular monsters
-            case 's' -> new Monster('s', "Lannister Soldier", 80, 8, 3, 25, 3);
-            case 'k' -> new Monster('k', "Lannister Knight", 200, 14, 8, 50, 4);
-            case 'q' -> new Monster('q', "Queen's Guard", 400, 20, 15, 100, 5);
-            case 'z' -> new Monster('z', "Wright", 600, 30, 15, 100, 3);
-            case 'b' -> new Monster('b', "Bear-Wright", 1000, 75, 30, 250, 4);
-            case 'g' -> new Monster('g', "Giant-Wright", 1500, 100, 40, 500, 5);
-            case 'w' -> new Monster('w', "White Walker", 2000, 150, 50, 1000, 6);
-            // Bosses
-            case 'M' -> new Boss('M', "The Mountain", 1000, 60, 25, 500, 6, 5);
-            case 'C' -> new Boss('C', "Queen Cersei", 100, 10, 10, 1000, 1, 8);
-            case 'K' -> new Boss('K', "Night's King", 5000, 300, 150, 5000, 8, 3);
-            // Traps
-            case 'B' -> new Trap('B', "Bonus Trap", 1, 1, 1, 250, 1, 5);
-            case 'Q' -> new Trap('Q', "Queen's Trap", 250, 50, 10, 100, 3, 7);
-            case 'D' -> new Trap('D', "Death Trap", 500, 100, 20, 250, 1, 10);
-            default -> null;
-        };
-    }
-
-    // -------------------------------------------------------------------------
     // Utility
     // -------------------------------------------------------------------------
 
@@ -355,10 +335,36 @@ public class GameManager {
 }
 package roguelike;
 
+import roguelike.model.units.Hero;
+import roguelike.model.units.Hunter;
+import roguelike.model.units.Mage;
+import roguelike.model.units.Rogue;
+import roguelike.model.units.Warrior;
+
+public class HeroFactory {
+    
+    public Hero createPlayer(int choice) {
+        return switch (choice) {
+            case 1 -> new Warrior("Jon Snow", 300, 30, 4, 3);
+            case 2 -> new Warrior("The Hound", 400, 20, 6, 5);
+            case 3 -> new Mage("Melisandre", 100, 5, 1, 300, 30, 15, 5, 6);
+            case 4 -> new Mage("Thoros of Myr", 250, 25, 4, 150, 20, 20, 3, 4);
+            case 5 -> new Rogue("Arya Stark", 150, 40, 2, 20);
+            case 6 -> new Rogue("Bronn", 250, 35, 3, 50);
+            case 7 -> new Hunter("Ygritte", 220, 30, 2, 6);
+            default -> new Warrior("Jon Snow", 300, 30, 4, 3);
+        };
+    }
+}
+package roguelike;
+
+import roguelike.ui.*;
+
 public class Main {
     public static void main(String[] args) {
         String path = (args.length > 0) ? args[0] : "src\\test\\resources";
-        GameManager gameManager = new GameManager(path);
+        GameView view = new ConsoleView();
+        GameManager gameManager = new GameManager(path, view);
         gameManager.startGame();
     }
 }
@@ -620,9 +626,13 @@ public class Mage extends Hero {
             sendMsg(this.name + " cast Blizzard, costing " + mana_cost + " mana.");
             int hits = 0;
             while (hits < hits_count && !validTargets.isEmpty()) {
-                int randomIndex = (int)(Math.random() * validTargets.size());
+                int randomIndex = this.rand.nextInt(validTargets.size());
+                System.out.println("Selected enemy: " + randomIndex);
+
                 Enemy target = validTargets.get(randomIndex);
                 int defenseRoll = this.rand.nextInt(target.def_pts + 1);
+                System.out.println("defender def roll: " + defenseRoll);
+
                 boolean killed = Attack(target, spell_power, defenseRoll);
                 if (killed) {
                     this.GainExp(target.GetExpVal());
@@ -755,6 +765,8 @@ public class Rogue extends Hero {
             sendMsg(this.name + " used Fan of Knives!");
             for (Enemy target : validTargets) {
                 int defenseRoll = this.rand.nextInt(target.def_pts + 1);
+                System.out.println("defender def roll: " + defenseRoll);
+
                 boolean killed = Attack(target, this.atk_pts, defenseRoll);
                 if (killed) {
                     this.GainExp(target.GetExpVal());
@@ -957,6 +969,7 @@ public class Warrior extends Hero {
             sendMsg(this.name + " used Avenger's Shield, healing for " + (10 * this.def_pts) + ".");
             if (!validTargets.isEmpty()) {
                 int randomIndex = this.rand.nextInt(validTargets.size());
+                System.out.println("Selected enemy: " + randomIndex);
                 Enemy target = validTargets.get(randomIndex);
                 int damage = this.hp_pool / 10;
                 boolean killed = Attack(target, damage, 0); 
@@ -972,6 +985,60 @@ public class Warrior extends Hero {
     }
 
     
+}
+package roguelike.ui;
+
+import java.util.Scanner;
+
+import roguelike.MessageCallback;
+
+public class ConsoleView implements GameView {
+    // Terminal-based implementation of GameView interface
+    private final Scanner scanner;
+    private final MessageCallback out;
+
+    public ConsoleView() {
+        this.scanner = new Scanner(System.in);
+        this.out = System.out::println;
+    }
+
+    public void displayMessage(String message) {
+        out.send(message);
+    }
+    public char readChar() throws IllegalArgumentException {
+        String choice = scanner.nextLine().trim().toLowerCase();
+        if (choice.length() != 1) {
+            throw new IllegalArgumentException("Input must be a single character.");
+        }
+        return choice.charAt(0);
+    }
+    public int readInt() throws NumberFormatException {
+        String input = scanner.nextLine().trim();
+        return Integer.parseInt(input);
+    }
+    public String readString() {
+        return scanner.nextLine().trim();
+    }
+    public void clearScreen() {
+        // Clear the console screen (works in most terminals)
+        out.send("\033[H\033[2J");
+        System.out.flush();
+    }
+    public void drawBoard(String board, String playerDescription) {
+        out.send(board);
+        out.send(playerDescription);
+    }
+    
+}
+package roguelike.ui;
+
+public interface GameView {
+    public void displayMessage(String message);
+    public char readChar();
+    public int readInt();
+    public String readString();
+    public void clearScreen();
+    public void drawBoard(String board, String playerDescription);
 }
 package roguelike.world;
 
@@ -1317,6 +1384,24 @@ public class BossTest {
         assertEquals(posBeforeCast.GetX(), board.getPositionOf(boss).GetX(), "Boss should not move on the turn he casts his ability");
         assertEquals(posBeforeCast.GetY(), board.getPositionOf(boss).GetY(), "Boss should not move on the turn he casts his ability");
     }
+
+    @Test 
+    public void testDeterminismInCastAbility() {
+        Hero hero1 = new Warrior("ted", 100, 10, 10, 3);
+        Boss boss1 = new Boss('W', "Warden", 1_000, 100, 150, 500, 10, 1);
+
+        boss1.rand.setSeed(42);
+
+        boss1.CastAbility(null, hero1);
+
+        Hero hero2 = new Warrior("ted", 100, 10, 10, 3);
+        Boss boss2 = new Boss('W', "Warden", 1_000, 100, 150, 500, 10, 1);
+
+        boss2.rand.setSeed(42);
+        boss2.CastAbility(null, hero2);
+
+        assertEquals(hero1.description(), hero2.description(), "with a determined seed, cast ability should affect identically.");
+    }
 }
 package roguelike.model.units;
 
@@ -1372,6 +1457,29 @@ public class HunterTest {
         assertTrue(weakling.description().contains("HP: 0/5"), "Monster should be dead");
         assertTrue(hunter.description().contains("Level: 2"), "Hunter should level up to 2");
         assertTrue(hunter.description().contains("Arrows: 29"), "Arrows should be 29 after shooting 1 and gaining 20 from level up");
+    }
+
+    @Test 
+    public void testDeterminismInCastAbility() {
+        Hero hero1 = new Hunter("hawkeye", 100, 10, 10, 100);
+        Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        List<Enemy> monsters = new ArrayList<>();
+
+        monsters.add(m1);
+        hero1.rand.setSeed(50);
+
+        hero1.CastAbility(monsters, hero1);
+
+        Hero hero2 = new Hunter("hawkeye", 100, 10, 10, 100);
+        Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        
+        monsters.remove(0);
+        monsters.add(m2);
+        hero2.rand.setSeed(50);
+
+        hero2.CastAbility(monsters, hero2);
+
+        assertEquals(m1.description(), m2.description());
     }
 }
 package roguelike.model.units;
@@ -1432,6 +1540,48 @@ public class MageTest {
         assertTrue(mage.description().contains("Level: 2"), "Mage should level up from the EXP gained");
         assertTrue(targets.isEmpty(), "Dead monster should be removed from the valid targets list");
     }
+
+    @Test 
+    public void testDeterminismInCastAbilityAttack() {
+        Hero hero1 = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
+        Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        List<Enemy> monsters = new ArrayList<>();
+
+        monsters.add(m1);
+        hero1.rand.setSeed(50);
+
+        hero1.CastAbility(monsters, hero1);
+
+        Hero hero2 = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
+        Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        
+        monsters.remove(0);
+        monsters.add(m2);
+        hero2.rand.setSeed(50);
+
+        hero2.CastAbility(monsters, hero2);
+
+        assertEquals(m1.description(), m2.description());
+    }
+
+    @Test 
+    public void testDeterminismInCastAbilityChoice() {
+        Hero mage = new Mage("Gandalf", 100, 10, 10, 1_000, 50, 100, 1, 100);
+        Monster m1 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
+        Monster m2 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
+        List<Enemy> monsters = new ArrayList<>();
+        monsters.add(m1);
+        monsters.add(m2);
+        String desc1 = m1.description();
+        String desc2 = m2.description();
+
+        mage.rand.setSeed(42);
+
+        mage.CastAbility(monsters, mage);
+
+        assertEquals(desc1, m1.description(), "m1 should not have been picked - no damage taken");
+        assertNotEquals(desc2, m2.description(), "m2 shouldve been hit - hp should change");
+    }
 }
 package roguelike.model.units;
 
@@ -1444,7 +1594,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class MonsterTest {
 
     @Test
-    public void testMovementBasicLogic() {
+    public void testMovementPlayerCloseLogic() {
         Monster monster = new Monster('m', "Test Monster", 50, 5, 2, 10, 3);
         Position monsterPos = new Position(5, 5);
         Position playerPos = new Position(5, 3); 
@@ -1455,6 +1605,39 @@ public class MonsterTest {
         assertEquals(5, newPos.GetX());
         assertEquals(4, newPos.GetY());
     }
+
+    @Test
+    public void testSeededMovementLogic() {
+        Monster monster = new Monster('m', "Test Monster", 50, 5, 2, 10, 3);
+        Position monsterPos = new Position(5, 5);
+        Position playerPos = new Position(10, 10); 
+        
+        // Seed the random number generator for reproducibility
+        monster.rand.setSeed(42);
+        
+        // With the seed set, we can predict the random movement
+        // first move:
+
+        Position newPos = monster.Move(monsterPos, playerPos);
+        
+        assertEquals(4, newPos.GetX());
+        assertEquals(5, newPos.GetY());
+
+        // second move:
+        newPos = monster.Move(newPos, playerPos);
+
+        assertEquals(4, newPos.GetX());
+        assertEquals(6, newPos.GetY());
+
+        // third move:
+        newPos = monster.Move(newPos, playerPos);
+
+        assertEquals(4, newPos.GetX());
+        assertEquals(7, newPos.GetY());
+
+    }
+
+    
 }
 package roguelike.model.units;
 
@@ -1513,6 +1696,29 @@ public class RogueTest {
         assertTrue(weakling.description().contains("HP: 0/5"), "Monster should be dead");
         assertTrue(rogue.description().contains("Level: 2"), "Rogue should level up to 2");
         assertTrue(rogue.description().contains("Energy: 100/100"), "Energy should be refilled to MAX after level up");
+    }
+
+    @Test 
+    public void testDeterminismInCastAbility() {
+        Hero hero1 = new Rogue("hawkeye", 100, 10, 10, 10);
+        Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        List<Enemy> monsters = new ArrayList<>();
+
+        monsters.add(m1);
+        hero1.rand.setSeed(50);
+
+        hero1.CastAbility(monsters, hero1);
+
+        Hero hero2 = new Rogue("hawkeye", 100, 10, 10, 10);
+        Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        
+        monsters.remove(0);
+        monsters.add(m2);
+        hero2.rand.setSeed(50);
+
+        hero2.CastAbility(monsters, hero2);
+
+        assertEquals(m1.description(), m2.description());
     }
 }
 package roguelike.model.units;
@@ -1587,6 +1793,25 @@ public class WarriorTest {
 
         assertTrue(warrior.description().contains("Cooldown: 4/3") || warrior.description().contains("Cooldown: 3/3"));
         assertFalse(warrior.CastAbility(targets, warrior), "Ability should fail when on cooldown");
+    }
+
+    @Test 
+    public void testDeterminismInCastAbilityChoice() {
+        Hero warr = new Warrior("Arthas", 100, 10, 10, 1);
+        Monster m1 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
+        Monster m2 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
+        List<Enemy> monsters = new ArrayList<>();
+        monsters.add(m1);
+        monsters.add(m2);
+        String desc1 = m1.description();
+        String desc2 = m2.description();
+
+        warr.rand.setSeed(42);
+
+        warr.CastAbility(monsters, warr);
+
+        assertEquals(desc1, m1.description(), "m1 should not have been picked - no damage taken");
+        assertNotEquals(desc2, m2.description(), "m2 shouldve been hit - hp should change");
     }
 }
 package roguelike.world;

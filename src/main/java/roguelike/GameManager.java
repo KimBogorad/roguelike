@@ -6,23 +6,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
 
-import roguelike.model.units.Boss;
-import roguelike.model.units.Enemy;
-import roguelike.model.units.Hero;
-import roguelike.model.units.Hunter;
-import roguelike.model.units.Mage;
-import roguelike.model.units.Monster;
-import roguelike.model.units.Occupant;
-import roguelike.model.units.Rogue;
-import roguelike.model.units.Trap;
-import roguelike.model.units.Unit;
-import roguelike.model.units.Warrior;
-import roguelike.world.Cell;
-import roguelike.world.CellVisitor;
-import roguelike.world.Floor;
-import roguelike.world.GameBoard;
-import roguelike.world.Position;
-import roguelike.world.Wall;
+import roguelike.model.units.*;
+import roguelike.world.*;
+import roguelike.ui.GameView;
 
 public class GameManager {
 
@@ -33,18 +19,22 @@ public class GameManager {
     private GameBoard board;
     private Hero player;
     private List<Enemy> enemies;
-    private final Scanner scanner;
-    private final MessageCallback out;
+    
+    
     private int currentLevel;
     private String levelsDir;
+    private final EnemyFactory enemyFactory;
+    private final HeroFactory heroFactory;
+    private final GameView view;
 
     /** Inject a custom output sink. */
-    public GameManager(String path) {
-        this.out = System.out::println;
-        this.scanner = new Scanner(System.in);
+    public GameManager(String path, GameView view) {
         this.enemies = new ArrayList<>();
         this.currentLevel = 1;
         this.levelsDir = path;
+        this.enemyFactory = new EnemyFactory();
+        this.heroFactory = new HeroFactory();
+        this.view = view;
     }
 
     // -------------------------------------------------------------------------
@@ -56,8 +46,8 @@ public class GameManager {
         while (playAgain) {
             this.currentLevel = 1;
             this.enemies.clear();
-            clearScreen();
-            out.send("Welcome to D&D!");
+            view.clearScreen();
+            view.displayMessage("Welcome to D&D!");
             selectPlayer();
             while (currentLevel <= MAX_LEVELS && isPlayerAlive()) {
                 String levelFile;
@@ -67,35 +57,41 @@ public class GameManager {
                     levelFile = levelsDir + File.separator + LEVEL_FILE_PREFIX + currentLevel + LEVEL_FILE_SUFFIX;
                 }
                 if (!loadLevel(levelFile)) {
-                    out.send("Error: Could not find or load -> " + levelFile);
-                    out.send("Please check if the file path is correct. Exiting game.");
+                    view.displayMessage("Error: Could not find or load -> " + levelFile);
+                    view.displayMessage("Please check if the file path is correct. Exiting game.");
                     return;
                 }
-                out.send("--- Loading Level " + currentLevel + " ---");
+                view.displayMessage("--- Loading Level " + currentLevel + " ---");
                 playLevel();
 
                 if (isPlayerAlive()) {
                     currentLevel++;
                 }
             }
-            out.send(isPlayerAlive() ? "You won!" : "Game Over.");
+            view.displayMessage(isPlayerAlive() ? "You won!" : "Game Over.");
             boolean validChoice = false;
             while (!validChoice) {
-                out.send("Do you want to restart (y/n)?");
-                out.send("If not there will be consequences Muwhahaha.");
-                String choice = scanner.nextLine().trim().toLowerCase();
+                view.displayMessage("Do you want to restart (y/n)?");
+                view.displayMessage("If not there will be consequences Muwhahaha.");
+                char choice = ' ';
+                try {
+                    choice = view.readChar();
+                } catch (IllegalArgumentException e) {
+                    view.displayMessage("Invalid input. Please enter a single character.");
+                    continue;
+                }
                 switch (choice) {
-                    case "y" -> {
-                        clearScreen();
+                    case 'y' -> {
+                        view.clearScreen();
                         validChoice = true;
                     }
-                    case "n" -> {
-                        out.send("Thank you for playing, deleting system32...");
+                    case 'n' -> {
+                        view.displayMessage("Thank you for playing, deleting system32...");
                         validChoice = true;
                         playAgain = false;
                     }
                     default -> {
-                        out.send("Invalid input! Please enter exactly 'y' or 'n'.");
+                        view.displayMessage("Invalid input! Please enter exactly 'y' or 'n'.");
                     }
                 }
             }
@@ -105,61 +101,37 @@ public class GameManager {
     // -------------------------------------------------------------------------
     // Player selection
     // -------------------------------------------------------------------------
-    private void clearScreen() {
-        try {
-            if (System.getProperty("os.name").toLowerCase().contains("windows")) {
-                new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
-            } else {
-                System.out.print("\033[H\033[2J");
-                System.out.flush();
-            }
-        } catch (Exception e) {
-            for (int i = 0; i < 50; ++i) System.out.println();
-        }
-    }
 
     private void selectPlayer() {
-        out.send("Select player:");
-        out.send("1. Jon Snow     (Warrior)");
-        out.send("2. The Hound    (Warrior)");
-        out.send("3. Melisandre   (Mage)");
-        out.send("4. Thoros of Myr (Mage)");
-        out.send("5. Arya Stark   (Rogue)");
-        out.send("6. Bronn        (Rogue)");
-        out.send("7. Ygritte      (Hunter)");
+        view.displayMessage("Select player:");
+        view.displayMessage("1. Jon Snow     (Warrior)");
+        view.displayMessage("2. The Hound    (Warrior)");
+        view.displayMessage("3. Melisandre   (Mage)");
+        view.displayMessage("4. Thoros of Myr (Mage)");
+        view.displayMessage("5. Arya Stark   (Rogue)");
+        view.displayMessage("6. Bronn        (Rogue)");
+        view.displayMessage("7. Ygritte      (Hunter)");
 
         int choice = -1;
         boolean validChoice = false;
         while (!validChoice){
             try {
-                String input = scanner.nextLine().trim();
-                choice = Integer.parseInt(input);
+                choice = view.readInt();
                 if (choice >= 1 && choice <= 7){
                     validChoice = true;
                 } else {
-                    out.send("Invalid choice. Please enter a number between 1 and 7.");
+                    view.displayMessage("Invalid choice. Please enter a number between 1 and 7.");
                 }
 
             } catch (NumberFormatException e) {
-                out.send("Invalid input. Please enter a valid number.");
+                view.displayMessage("Invalid input. Please enter a valid number.");
             }
         }
-        player = createPlayer(choice);
-        player.setMessageCallback(out);
+        player = heroFactory.createPlayer(choice);
+        player.setMessageCallback(m -> view.displayMessage(m));
     }
 
-    private Hero createPlayer(int choice) {
-        return switch (choice) {
-            case 1 -> new Warrior("Jon Snow", 300, 30, 4, 3);
-            case 2 -> new Warrior("The Hound", 400, 20, 6, 5);
-            case 3 -> new Mage("Melisandre", 100, 5, 1, 300, 30, 15, 5, 6);
-            case 4 -> new Mage("Thoros of Myr", 250, 25, 4, 150, 20, 20, 3, 4);
-            case 5 -> new Rogue("Arya Stark", 150, 40, 2, 20);
-            case 6 -> new Rogue("Bronn", 250, 35, 3, 50);
-            case 7 -> new Hunter("Ygritte", 220, 30, 2, 6);
-            default -> new Warrior("Jon Snow", 300, 30, 4, 3);
-        };
-    }
+    
 
     // -------------------------------------------------------------------------
     // Game loop
@@ -167,10 +139,15 @@ public class GameManager {
 
     private void playLevel() {
         while (isPlayerAlive() && !enemies.isEmpty()) {
-            out.send(board.toString());
-            out.send(player.description());
-            char input = readInput();
-            clearScreen();
+            view.drawBoard(board.toString(), player.description());
+            char input = ' ';
+            try {
+                input = view.readChar();
+            } catch (IllegalArgumentException e) {
+                view.displayMessage("Invalid input. Please enter a single character.");
+                continue;
+            } 
+            view.clearScreen();
             boolean validTurn = processPlayerInput(input);
             if (validTurn) {
                 player.Tick();
@@ -202,11 +179,6 @@ public class GameManager {
     // Input handling
     // -------------------------------------------------------------------------
 
-    private char readInput() {
-        String line = scanner.nextLine();
-        return line.isEmpty() ? ' ' : line.toLowerCase().charAt(0);
-    }
-
     private boolean processPlayerInput(char input) {
         return switch (input) {
             case 'w' -> movePlayer(0, -1);
@@ -216,7 +188,7 @@ public class GameManager {
             case 'e' -> castAbility();
             case 'q' -> true;
             default  -> { 
-                out.send("Invalid input. Please use w/a/s/d/e/q.");
+                view.displayMessage("Invalid input. Please use w/a/s/d/e/q.");
                 yield false;
             }
         };
@@ -229,7 +201,7 @@ public class GameManager {
         board.getCell(target).accept(new CellVisitor() {
             @Override
             public void visit(Wall wall) {
-                out.send("You cannot move there, it's a wall!");
+                view.displayMessage("You cannot move there, it's a wall!");
                 validMove[0] = false;
             }
             @Override
@@ -292,7 +264,7 @@ public class GameManager {
                 }
             }
         } catch (Exception e) {
-            out.send("Error reading level file: " + e.getMessage());
+            view.displayMessage("Error reading level file: " + e.getMessage());
             return null;
         }
         return lines;
@@ -305,9 +277,9 @@ public class GameManager {
         if (c == '@') {
             placeUnit(floor, player);
         } else if (c != '.') {
-            Enemy enemy = createEnemy(c);
+            Enemy enemy = enemyFactory.createEnemy(c);
             if (enemy != null) {
-                enemy.setMessageCallback(out);
+                enemy.setMessageCallback(m -> view.displayMessage(m));
                 enemies.add(enemy);
                 placeUnit(floor, enemy);
             }
@@ -320,32 +292,6 @@ public class GameManager {
         Occupant occ = new Occupant();
         occ.SetUnit(unit);
         floor.SetOccupant(occ);
-    }
-
-    // -------------------------------------------------------------------------
-    // Enemy factory
-    // -------------------------------------------------------------------------
-
-    private Enemy createEnemy(char c) {
-        return switch (c) {
-            // Regular monsters
-            case 's' -> new Monster('s', "Lannister Soldier", 80, 8, 3, 25, 3);
-            case 'k' -> new Monster('k', "Lannister Knight", 200, 14, 8, 50, 4);
-            case 'q' -> new Monster('q', "Queen's Guard", 400, 20, 15, 100, 5);
-            case 'z' -> new Monster('z', "Wright", 600, 30, 15, 100, 3);
-            case 'b' -> new Monster('b', "Bear-Wright", 1000, 75, 30, 250, 4);
-            case 'g' -> new Monster('g', "Giant-Wright", 1500, 100, 40, 500, 5);
-            case 'w' -> new Monster('w', "White Walker", 2000, 150, 50, 1000, 6);
-            // Bosses
-            case 'M' -> new Boss('M', "The Mountain", 1000, 60, 25, 500, 6, 5);
-            case 'C' -> new Boss('C', "Queen Cersei", 100, 10, 10, 1000, 1, 8);
-            case 'K' -> new Boss('K', "Night's King", 5000, 300, 150, 5000, 8, 3);
-            // Traps
-            case 'B' -> new Trap('B', "Bonus Trap", 1, 1, 1, 250, 1, 5);
-            case 'Q' -> new Trap('Q', "Queen's Trap", 250, 50, 10, 100, 3, 7);
-            case 'D' -> new Trap('D', "Death Trap", 500, 100, 20, 250, 1, 10);
-            default -> null;
-        };
     }
 
     // -------------------------------------------------------------------------
