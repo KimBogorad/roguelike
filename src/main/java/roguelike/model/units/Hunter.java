@@ -46,7 +46,7 @@ public class Hunter extends Hero{
             arrows--;            
             if (!validTargets.isEmpty()) {
                 Enemy target = validTargets.get(0);
-                int defenseRoll = (int)(Math.random() * (target.def_pts + 1));
+                int defenseRoll = this.rand.nextInt(target.def_pts + 1);
                 boolean killed = Attack(target, this.atk_pts, defenseRoll);
                 if (killed) {
                     this.GainExp(target.GetExpVal());

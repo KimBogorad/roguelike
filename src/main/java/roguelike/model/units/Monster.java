@@ -1,7 +1,5 @@
 package roguelike.model.units;
 
-import java.util.Random;
-
 import roguelike.world.GameBoard;
 import roguelike.world.Position;
 
@@ -34,8 +32,7 @@ public class Monster extends Enemy {
             }
         } 
         else {
-            Random rand = new Random();
-            int move = rand.nextInt(5);
+            int move = this.rand.nextInt(5);
             return switch (move) {
                 case 0 -> new Position(myPos.GetX() - 1, myPos.GetY());
                 case 1 -> new Position(myPos.GetX() + 1, myPos.GetY());

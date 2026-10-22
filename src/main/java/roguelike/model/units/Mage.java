@@ -50,7 +50,7 @@ public class Mage extends Hero {
             while (hits < hits_count && !validTargets.isEmpty()) {
                 int randomIndex = (int)(Math.random() * validTargets.size());
                 Enemy target = validTargets.get(randomIndex);
-                int defenseRoll = (int)(Math.random() * (target.def_pts + 1));
+                int defenseRoll = this.rand.nextInt(target.def_pts + 1);
                 boolean killed = Attack(target, spell_power, defenseRoll);
                 if (killed) {
                     this.GainExp(target.GetExpVal());
