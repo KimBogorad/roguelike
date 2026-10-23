@@ -4,7 +4,7 @@ import roguelike.model.units.Hero;
 
 public abstract class Consumable extends Item {
 
-    public Consumable(String name, String color) {
+    public Consumable(String name) {
         super(name);
     }
 
