@@ -373,6 +373,94 @@ package roguelike;
 public interface MessageCallback {
     void send(String message);
 }
+package roguelike.model.items;
+
+public class Armor extends Equipment {
+
+    public Armor(String name) {
+        super(name);
+    }
+    
+}
+package roguelike.model.items;
+
+public enum ArmorSlot {
+    HEAD,
+    CHEST,
+    LEGS
+}
+package roguelike.model.items;
+
+import roguelike.model.units.Hero;
+
+public abstract class Consumable extends Item {
+
+    public Consumable(String name, String color) {
+        super(name);
+    }
+
+    @Override
+    public String description() {
+        return "";
+    }
+
+    public abstract void consume(Hero hero);
+}
+package roguelike.model.items;
+
+import java.util.Map;
+import java.util.EnumMap;
+
+public class Equipment extends Item {
+    protected int level;
+    protected int upgradeCost;
+    protected Map<Stat, Integer> stats;
+
+    public Equipment(String name) {
+        super(name);
+        this.stats = new EnumMap<>(Stat.class);
+    }
+
+    @Override 
+    public String description() {
+        return null; // TEMPORARY
+    }
+    
+    protected int getStat(Stat stat) {
+        return stats.getOrDefault(stat, 0);
+    }
+}
+package roguelike.model.items;
+
+public abstract class Item {
+    protected String name;
+    protected String description;
+
+    public Item(String name) {
+        this.name = name;
+    }
+
+    public abstract String description();
+    
+}
+package roguelike.model.items;
+
+public enum Stat {
+    MAX_HP,
+    DEFENSE,
+    ATTACK
+}
+
+
+
+package roguelike.model.items;
+
+public class Weapon extends Equipment{
+    
+    public Weapon(String name) {
+        super(name);
+    }
+}
 package roguelike.model.units;
 
 import java.util.List;
