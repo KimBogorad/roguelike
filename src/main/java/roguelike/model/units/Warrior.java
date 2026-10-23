@@ -48,8 +48,7 @@ public class Warrior extends Hero {
             this.hp_current = Math.min(this.hp_current + (10 * this.def_pts), this.hp_pool);
             sendMsg(this.name + " used Avenger's Shield, healing for " + (10 * this.def_pts) + ".");
             if (!validTargets.isEmpty()) {
-                int randomIndex = this.rand.nextInt(validTargets.size());
-                System.out.println("Selected enemy: " + randomIndex);
+                int randomIndex = rollWithinRange(validTargets.size()-1); // offset because rWR rolls max+1
                 Enemy target = validTargets.get(randomIndex);
                 int damage = this.hp_pool / 10;
                 boolean killed = Attack(target, damage, 0); 

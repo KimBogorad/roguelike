@@ -8,6 +8,7 @@ import roguelike.MessageCallback;
 import java.util.ArrayList;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.Random;
 
 public class MageTest {
     private MessageCallback dummyCallback;
@@ -56,46 +57,97 @@ public class MageTest {
         assertTrue(mage.description().contains("Level: 2"), "Mage should level up from the EXP gained");
         assertTrue(targets.isEmpty(), "Dead monster should be removed from the valid targets list");
     }
+    @Test
+    public void castAbilityIsDeterministicWithSameSeed() {
+        int seed = 50;
 
-    @Test 
-    public void testDeterminismInCastAbilityAttack() {
         Hero hero1 = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
         Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        List<Enemy> monsters = new ArrayList<>();
-
-        monsters.add(m1);
-        hero1.rand.setSeed(50);
-
-        hero1.CastAbility(monsters, hero1);
+        hero1.setRand(new Random(seed));
+        List<Enemy> targets1 = new ArrayList<>();
+        targets1.add(m1);
 
         Hero hero2 = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
         Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        
-        monsters.remove(0);
-        monsters.add(m2);
-        hero2.rand.setSeed(50);
+        hero2.setRand(new Random(seed));
+        List<Enemy> targets2 = new ArrayList<>();
+        targets2.add(m2);
 
-        hero2.CastAbility(monsters, hero2);
+        hero1.CastAbility(targets1, hero1);
+        hero2.CastAbility(targets2, hero2);
 
-        assertEquals(m1.description(), m2.description());
+        assertEquals(m1.description(), m2.description(),
+                "with the same seed, the spell should hit both monsters identically");
+        // spell power 50 vs monster DEF 10: damage is always at least 40, so this isn't "nothing vs nothing"
+        assertFalse(m1.description().contains("HP: 100/100"), "Monster should have taken damage");
     }
 
-    @Test 
-    public void testDeterminismInCastAbilityChoice() {
+    @Test
+    public void blizzardDamageMatchesTheDefenseRoll() {
+        int seed = 50;
+        Hero mage = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
+        Monster monster = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        mage.setRand(new Random(seed));
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(monster);
+
+        // Predict with an independent Random: first the target choice, then the defense roll
+        Random predictor = new Random(seed);
+        predictor.nextInt(1);                         // target choice (one target, but it still consumes a roll)
+        int expectedRoll = predictor.nextInt(10 + 1); // monster DEF is 10
+        int expectedHp = 100 - Math.max(0, 50 - expectedRoll);
+
+        mage.CastAbility(targets, mage);
+
+        assertTrue(monster.description().contains("HP: " + expectedHp + "/100"),
+                "Expected HP " + expectedHp + " but got: " + monster.description());
+    }
+
+    @Test
+    public void blizzardHitsTheTargetTheRandomPicks() {
+        int seed = 42;
         Hero mage = new Mage("Gandalf", 100, 10, 10, 1_000, 50, 100, 1, 100);
         Monster m1 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
         Monster m2 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
-        List<Enemy> monsters = new ArrayList<>();
-        monsters.add(m1);
-        monsters.add(m2);
-        String desc1 = m1.description();
-        String desc2 = m2.description();
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(m1);
+        targets.add(m2);
+        mage.setRand(new Random(seed));
 
-        mage.rand.setSeed(42);
+        int expectedIndex = new Random(seed).nextInt(2);
+        Monster chosen = (expectedIndex == 0) ? m1 : m2;
+        Monster other  = (expectedIndex == 0) ? m2 : m1;
 
-        mage.CastAbility(monsters, mage);
+        mage.CastAbility(targets, mage);
 
-        assertEquals(desc1, m1.description(), "m1 should not have been picked - no damage taken");
-        assertNotEquals(desc2, m2.description(), "m2 shouldve been hit - hp should change");
+        // spell power 100 vs DEF 0: the defense roll is always 0, so the damage is exactly 100
+        assertTrue(chosen.description().contains("HP: 900/1000"), "The picked target should take 100 damage");
+        assertTrue(other.description().contains("HP: 1000/1000"), "The other target should be untouched");
+    }
+
+    @Test
+    public void blizzardTargetChoiceDependsOnTheRandom() {
+        // Across several randomly chosen seeds, both monsters must get picked at least once
+        int seed = 42;
+        boolean firstWasHit = false;
+        boolean secondWasHit = false;
+        Random rand = new Random(seed);
+
+        for (int i = 0; i < 20; i++) {
+            Hero mage = new Mage("Gandalf", 100, 10, 10, 1_000, 50, 100, 1, 100);
+            Monster m1 = new Monster('m', "mob1", 1_000, 1, 0, 50, 1);
+            Monster m2 = new Monster('m', "mob2", 1_000, 1, 0, 50, 1);
+            List<Enemy> targets = new ArrayList<>();
+            targets.add(m1);
+            targets.add(m2);
+            mage.setRand(new Random(rand.nextLong()));
+
+            mage.CastAbility(targets, mage);
+
+            if (!m1.description().contains("HP: 1000/1000")) firstWasHit = true;
+            if (!m2.description().contains("HP: 1000/1000")) secondWasHit = true;
+        }
+
+        assertTrue(firstWasHit && secondWasHit, "Both targets should be reachable");
     }
 }

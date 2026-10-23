@@ -44,9 +44,7 @@ public class Rogue extends Hero {
             energy -= cost;
             sendMsg(this.name + " used Fan of Knives!");
             for (Enemy target : validTargets) {
-                int defenseRoll = this.rand.nextInt(target.def_pts + 1);
-                System.out.println("defender def roll: " + defenseRoll);
-
+                int defenseRoll = rollWithinRange(target.def_pts);
                 boolean killed = Attack(target, this.atk_pts, defenseRoll);
                 if (killed) {
                     this.GainExp(target.GetExpVal());

@@ -376,9 +376,11 @@ public interface MessageCallback {
 package roguelike.model.items;
 
 public class Armor extends Equipment {
+    private ArmorSlot slot;
 
-    public Armor(String name) {
+    public Armor(String name, int defenseValue) {
         super(name);
+        stats.put(Stat.DEFENSE, defenseValue);
     }
     
 }
@@ -429,6 +431,10 @@ public class Equipment extends Item {
     protected int getStat(Stat stat) {
         return stats.getOrDefault(stat, 0);
     }
+
+    protected void upgrade() {
+        // TEMPORARY
+    }
 }
 package roguelike.model.items;
 
@@ -457,8 +463,9 @@ package roguelike.model.items;
 
 public class Weapon extends Equipment{
     
-    public Weapon(String name) {
+    public Weapon(String name, int attackValue) {
         super(name);
+        stats.put(Stat.ATTACK, attackValue);
     }
 }
 package roguelike.model.units;
@@ -483,7 +490,7 @@ public class Boss extends Monster implements HeroicUnit {
     public boolean CastAbility(List<Enemy> validTargets, Hero player) {
         sendMsg(this.name + " shoots a devastating blast at " + player.name + "!");
         int abilityDamage = this.atk_pts;
-        int defenseRoll = this.rand.nextInt(player.def_pts + 1);
+        int defenseRoll = rollWithinRange(player.def_pts);
         return Attack(player, abilityDamage, defenseRoll);
     }
 
@@ -650,7 +657,7 @@ public class Hunter extends Hero{
             arrows--;            
             if (!validTargets.isEmpty()) {
                 Enemy target = validTargets.get(0);
-                int defenseRoll = this.rand.nextInt(target.def_pts + 1);
+                int defenseRoll = rollWithinRange(target.def_pts);
                 boolean killed = Attack(target, this.atk_pts, defenseRoll);
                 if (killed) {
                     this.GainExp(target.GetExpVal());
@@ -714,13 +721,9 @@ public class Mage extends Hero {
             sendMsg(this.name + " cast Blizzard, costing " + mana_cost + " mana.");
             int hits = 0;
             while (hits < hits_count && !validTargets.isEmpty()) {
-                int randomIndex = this.rand.nextInt(validTargets.size());
-                System.out.println("Selected enemy: " + randomIndex);
-
+                int randomIndex = rollWithinRange(validTargets.size()-1); //offset because rWR rolls max+1
                 Enemy target = validTargets.get(randomIndex);
-                int defenseRoll = this.rand.nextInt(target.def_pts + 1);
-                System.out.println("defender def roll: " + defenseRoll);
-
+                int defenseRoll = rollWithinRange(target.def_pts);
                 boolean killed = Attack(target, spell_power, defenseRoll);
                 if (killed) {
                     this.GainExp(target.GetExpVal());
@@ -852,9 +855,7 @@ public class Rogue extends Hero {
             energy -= cost;
             sendMsg(this.name + " used Fan of Knives!");
             for (Enemy target : validTargets) {
-                int defenseRoll = this.rand.nextInt(target.def_pts + 1);
-                System.out.println("defender def roll: " + defenseRoll);
-
+                int defenseRoll = rollWithinRange(target.def_pts);
                 boolean killed = Attack(target, this.atk_pts, defenseRoll);
                 if (killed) {
                     this.GainExp(target.GetExpVal());
@@ -974,8 +975,8 @@ public abstract class Unit {
         sendMsg(this.description());
         sendMsg(target.description());
 
-        int atk_roll = rollWithinRange(0, this.atk_pts + 1);
-        int def_roll = rollWithinRange(0, target.def_pts + 1);
+        int atk_roll = rollWithinRange(this.atk_pts);
+        int def_roll = rollWithinRange(target.def_pts);
 
         sendMsg(this.name + " rolled " + atk_roll + " attack points.");
         sendMsg(target.name + " rolled " + def_roll + " defense points.");
@@ -1000,6 +1001,10 @@ public abstract class Unit {
 
     protected int rollWithinRange(int min, int max) {
         return rand.nextInt(max - min + 1) + min;
+    }
+
+    protected int rollWithinRange(int max) {
+        return rand.nextInt(max + 1);
     }
 
     public abstract String description();
@@ -1056,8 +1061,7 @@ public class Warrior extends Hero {
             this.hp_current = Math.min(this.hp_current + (10 * this.def_pts), this.hp_pool);
             sendMsg(this.name + " used Avenger's Shield, healing for " + (10 * this.def_pts) + ".");
             if (!validTargets.isEmpty()) {
-                int randomIndex = this.rand.nextInt(validTargets.size());
-                System.out.println("Selected enemy: " + randomIndex);
+                int randomIndex = rollWithinRange(validTargets.size()-1); // offset because rWR rolls max+1
                 Enemy target = validTargets.get(randomIndex);
                 int damage = this.hp_pool / 10;
                 boolean killed = Attack(target, damage, 0); 
@@ -1403,6 +1407,8 @@ import roguelike.world.Floor;
 import roguelike.world.GameBoard;
 import roguelike.world.Position;
 
+import java.util.Random;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 public class BossTest {
@@ -1473,22 +1479,50 @@ public class BossTest {
         assertEquals(posBeforeCast.GetY(), board.getPositionOf(boss).GetY(), "Boss should not move on the turn he casts his ability");
     }
 
-    @Test 
-    public void testDeterminismInCastAbility() {
-        Hero hero1 = new Warrior("ted", 100, 10, 10, 3);
-        Boss boss1 = new Boss('W', "Warden", 1_000, 100, 150, 500, 10, 1);
+    @Test
+public void castAbilityIsDeterministicWithSameSeed() {
+    int seed = 42;
 
-        boss1.rand.setSeed(42);
+    Hero hero1 = new Warrior("ted", 100, 10, 10, 3);
+    Boss boss1 = new Boss('W', "Warden", 1_000, 100, 150, 500, 10, 1);
+    Random rand1 = new Random(seed);
+    boss1.setRand(rand1);
 
-        boss1.CastAbility(null, hero1);
+    Hero hero2 = new Warrior("ted", 100, 10, 10, 3);
+    Boss boss2 = new Boss('W', "Warden", 1_000, 100, 150, 500, 10, 1);
+    Random rand2 = new Random(seed);
+    boss2.setRand(rand2);
 
-        Hero hero2 = new Warrior("ted", 100, 10, 10, 3);
-        Boss boss2 = new Boss('W', "Warden", 1_000, 100, 150, 500, 10, 1);
+    boss1.CastAbility(null, hero1);
+    boss2.CastAbility(null, hero2);
 
-        boss2.rand.setSeed(42);
-        boss2.CastAbility(null, hero2);
+    // 1. Same outcome on both sides
+    assertEquals(hero1.description(), hero2.description(),
+            "with the same seed, the ability should affect both heroes identically");
 
-        assertEquals(hero1.description(), hero2.description(), "with a determined seed, cast ability should affect identically.");
+    // 2. The ability actually hurt the hero (the comparison above is not "nothing vs nothing")
+    assertFalse(hero1.description().contains("HP: 100/100"), "Hero should have taken damage");
+
+    // 3. Both Randoms were consumed the same amount, so the injected Random was really used
+    assertEquals(rand1.nextInt(), rand2.nextInt(),
+            "both Randoms should be at the same point in their sequence");
+}
+
+    @Test
+    public void castAbilityDamageMatchesTheDefenseRoll() {
+        int seed = 42;
+        Hero hero = new Warrior("ted", 100, 10, 10, 3);
+        Boss boss = new Boss('W', "Warden", 1_000, 100, 150, 500, 10, 1);
+        boss.setRand(new Random(seed));
+
+        // Predict the roll with an independent Random on the same seed
+        int expectedRoll = new Random(seed).nextInt(10 + 1);   // hero DEF is 10
+        int expectedHp = Math.max(0, 100 - Math.max(0, 100 - expectedRoll));  // hp - (boss ATK - roll)
+
+        boss.CastAbility(null, hero);
+
+        assertTrue(hero.description().contains("HP: " + expectedHp + "/100"),
+                "Expected HP " + expectedHp + " but got: " + hero.description());
     }
 }
 package roguelike.model.units;
@@ -1501,6 +1535,7 @@ import roguelike.MessageCallback;
 import java.util.ArrayList;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.Random;
 
 public class HunterTest {
     private MessageCallback dummyCallback;
@@ -1547,27 +1582,51 @@ public class HunterTest {
         assertTrue(hunter.description().contains("Arrows: 29"), "Arrows should be 29 after shooting 1 and gaining 20 from level up");
     }
 
-    @Test 
-    public void testDeterminismInCastAbility() {
+    @Test
+    public void castAbilityIsDeterministicWithSameSeed() {
+        int seed = 50;
+
         Hero hero1 = new Hunter("hawkeye", 100, 10, 10, 100);
-        Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        List<Enemy> monsters = new ArrayList<>();
-
-        monsters.add(m1);
-        hero1.rand.setSeed(50);
-
-        hero1.CastAbility(monsters, hero1);
+        Monster m1 = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        hero1.setRand(new Random(seed));
+        List<Enemy> targets1 = new ArrayList<>();
+        targets1.add(m1);
 
         Hero hero2 = new Hunter("hawkeye", 100, 10, 10, 100);
-        Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        
-        monsters.remove(0);
-        monsters.add(m2);
-        hero2.rand.setSeed(50);
+        Monster m2 = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        Random rand2 = new Random(seed);
+        hero2.setRand(rand2);
+        List<Enemy> targets2 = new ArrayList<>();
+        targets2.add(m2);
 
-        hero2.CastAbility(monsters, hero2);
+        hero1.CastAbility(targets1, hero1);
+        hero2.CastAbility(targets2, hero2);
 
-        assertEquals(m1.description(), m2.description());
+        // 1. Same outcome on both sides
+        assertEquals(m1.description(), m2.description(),
+                "with the same seed, the shot should hit both monsters identically");
+
+        // 2. The shot actually hurt the monster (monster DEF 5 < hunter ATK 10, so damage is always at least 5)
+        assertFalse(m1.description().contains("HP: 100/100"), "Monster should have taken damage");
+    }
+
+    @Test
+    public void shotDamageMatchesTheDefenseRoll() {
+        int seed = 50;
+        Hero hero = new Hunter("hawkeye", 100, 10, 10, 100);
+        Monster monster = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        hero.setRand(new Random(seed));
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(monster);
+
+        // Predict the roll with an independent Random on the same seed
+        int expectedRoll = new Random(seed).nextInt(5 + 1);   // monster DEF is 5
+        int expectedHp = 100 - Math.max(0, 10 - expectedRoll); // hunter ATK is 10
+
+        hero.CastAbility(targets, hero);
+
+        assertTrue(monster.description().contains("HP: " + expectedHp + "/100"),
+                "Expected HP " + expectedHp + " but got: " + monster.description());
     }
 }
 package roguelike.model.units;
@@ -1580,6 +1639,7 @@ import roguelike.MessageCallback;
 import java.util.ArrayList;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.Random;
 
 public class MageTest {
     private MessageCallback dummyCallback;
@@ -1628,47 +1688,98 @@ public class MageTest {
         assertTrue(mage.description().contains("Level: 2"), "Mage should level up from the EXP gained");
         assertTrue(targets.isEmpty(), "Dead monster should be removed from the valid targets list");
     }
+    @Test
+    public void castAbilityIsDeterministicWithSameSeed() {
+        int seed = 50;
 
-    @Test 
-    public void testDeterminismInCastAbilityAttack() {
         Hero hero1 = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
         Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        List<Enemy> monsters = new ArrayList<>();
-
-        monsters.add(m1);
-        hero1.rand.setSeed(50);
-
-        hero1.CastAbility(monsters, hero1);
+        hero1.setRand(new Random(seed));
+        List<Enemy> targets1 = new ArrayList<>();
+        targets1.add(m1);
 
         Hero hero2 = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
         Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        
-        monsters.remove(0);
-        monsters.add(m2);
-        hero2.rand.setSeed(50);
+        hero2.setRand(new Random(seed));
+        List<Enemy> targets2 = new ArrayList<>();
+        targets2.add(m2);
 
-        hero2.CastAbility(monsters, hero2);
+        hero1.CastAbility(targets1, hero1);
+        hero2.CastAbility(targets2, hero2);
 
-        assertEquals(m1.description(), m2.description());
+        assertEquals(m1.description(), m2.description(),
+                "with the same seed, the spell should hit both monsters identically");
+        // spell power 50 vs monster DEF 10: damage is always at least 40, so this isn't "nothing vs nothing"
+        assertFalse(m1.description().contains("HP: 100/100"), "Monster should have taken damage");
     }
 
-    @Test 
-    public void testDeterminismInCastAbilityChoice() {
+    @Test
+    public void blizzardDamageMatchesTheDefenseRoll() {
+        int seed = 50;
+        Hero mage = new Mage("Gandalf", 100, 10, 10, 100, 10, 50, 1, 100);
+        Monster monster = new Monster('m', "monsty", 100, 10, 10, 100, 1);
+        mage.setRand(new Random(seed));
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(monster);
+
+        // Predict with an independent Random: first the target choice, then the defense roll
+        Random predictor = new Random(seed);
+        predictor.nextInt(1);                         // target choice (one target, but it still consumes a roll)
+        int expectedRoll = predictor.nextInt(10 + 1); // monster DEF is 10
+        int expectedHp = 100 - Math.max(0, 50 - expectedRoll);
+
+        mage.CastAbility(targets, mage);
+
+        assertTrue(monster.description().contains("HP: " + expectedHp + "/100"),
+                "Expected HP " + expectedHp + " but got: " + monster.description());
+    }
+
+    @Test
+    public void blizzardHitsTheTargetTheRandomPicks() {
+        int seed = 42;
         Hero mage = new Mage("Gandalf", 100, 10, 10, 1_000, 50, 100, 1, 100);
         Monster m1 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
         Monster m2 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
-        List<Enemy> monsters = new ArrayList<>();
-        monsters.add(m1);
-        monsters.add(m2);
-        String desc1 = m1.description();
-        String desc2 = m2.description();
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(m1);
+        targets.add(m2);
+        mage.setRand(new Random(seed));
 
-        mage.rand.setSeed(42);
+        int expectedIndex = new Random(seed).nextInt(2);
+        Monster chosen = (expectedIndex == 0) ? m1 : m2;
+        Monster other  = (expectedIndex == 0) ? m2 : m1;
 
-        mage.CastAbility(monsters, mage);
+        mage.CastAbility(targets, mage);
 
-        assertEquals(desc1, m1.description(), "m1 should not have been picked - no damage taken");
-        assertNotEquals(desc2, m2.description(), "m2 shouldve been hit - hp should change");
+        // spell power 100 vs DEF 0: the defense roll is always 0, so the damage is exactly 100
+        assertTrue(chosen.description().contains("HP: 900/1000"), "The picked target should take 100 damage");
+        assertTrue(other.description().contains("HP: 1000/1000"), "The other target should be untouched");
+    }
+
+    @Test
+    public void blizzardTargetChoiceDependsOnTheRandom() {
+        // Across several randomly chosen seeds, both monsters must get picked at least once
+        int seed = 42;
+        boolean firstWasHit = false;
+        boolean secondWasHit = false;
+        Random rand = new Random(seed);
+
+        for (int i = 0; i < 20; i++) {
+            Hero mage = new Mage("Gandalf", 100, 10, 10, 1_000, 50, 100, 1, 100);
+            Monster m1 = new Monster('m', "mob1", 1_000, 1, 0, 50, 1);
+            Monster m2 = new Monster('m', "mob2", 1_000, 1, 0, 50, 1);
+            List<Enemy> targets = new ArrayList<>();
+            targets.add(m1);
+            targets.add(m2);
+            mage.setRand(new Random(rand.nextLong()));
+
+            mage.CastAbility(targets, mage);
+
+            if (!m1.description().contains("HP: 1000/1000")) firstWasHit = true;
+            if (!m2.description().contains("HP: 1000/1000")) secondWasHit = true;
+        }
+
+        assertTrue(firstWasHit && secondWasHit, "Both targets should be reachable");
     }
 }
 package roguelike.model.units;
@@ -1737,6 +1848,7 @@ import roguelike.MessageCallback;
 import java.util.ArrayList;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.Random;
 
 public class RogueTest {
     private MessageCallback dummyCallback;
@@ -1786,27 +1898,50 @@ public class RogueTest {
         assertTrue(rogue.description().contains("Energy: 100/100"), "Energy should be refilled to MAX after level up");
     }
 
-    @Test 
-    public void testDeterminismInCastAbility() {
-        Hero hero1 = new Rogue("hawkeye", 100, 10, 10, 10);
-        Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        List<Enemy> monsters = new ArrayList<>();
+    @Test
+    public void fanOfKnivesIsDeterministicWithSameSeed() {
+        int seed = 50;
 
-        monsters.add(m1);
-        hero1.rand.setSeed(50);
+        Hero rogue1 = new Rogue("Arya", 100, 10, 10, 10);
+        Monster m1 = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        rogue1.setRand(new Random(seed));
+        List<Enemy> targets1 = new ArrayList<>();
+        targets1.add(m1);
 
-        hero1.CastAbility(monsters, hero1);
+        Hero rogue2 = new Rogue("Arya", 100, 10, 10, 10);
+        Monster m2 = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        rogue2.setRand(new Random(seed));
+        List<Enemy> targets2 = new ArrayList<>();
+        targets2.add(m2);
 
-        Hero hero2 = new Rogue("hawkeye", 100, 10, 10, 10);
-        Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        
-        monsters.remove(0);
-        monsters.add(m2);
-        hero2.rand.setSeed(50);
-
-        hero2.CastAbility(monsters, hero2);
+        rogue1.CastAbility(targets1, rogue1);
+        rogue2.CastAbility(targets2, rogue2);
 
         assertEquals(m1.description(), m2.description());
+        // monster DEF 5 < rogue ATK 10, so the damage is always at least 5
+        assertFalse(m1.description().contains("HP: 100/100"), "Monster should have taken damage");
+    }
+
+    @Test
+    public void fanOfKnivesRollsDefenseForEachTargetInOrder() {
+        int seed = 50;
+        Hero rogue = new Rogue("Arya", 100, 10, 10, 10);
+        Monster m1 = new Monster('m', "first", 100, 10, 5, 100, 1);
+        Monster m2 = new Monster('m', "second", 100, 10, 5, 100, 1);
+        rogue.setRand(new Random(seed));
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(m1);
+        targets.add(m2);
+
+        // Predict with an independent Random: one defense roll per target, in list order
+        Random predictor = new Random(seed);
+        int hp1 = 100 - Math.max(0, 10 - predictor.nextInt(5 + 1));
+        int hp2 = 100 - Math.max(0, 10 - predictor.nextInt(5 + 1));
+
+        rogue.CastAbility(targets, rogue);
+
+        assertTrue(m1.description().contains("HP: " + hp1 + "/100"), m1.description());
+        assertTrue(m2.description().contains("HP: " + hp2 + "/100"), m2.description());
     }
 }
 package roguelike.model.units;
@@ -1847,6 +1982,95 @@ public class TrapTest {
 }
 package roguelike.model.units;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Random;
+
+import org.junit.jupiter.api.Test;
+
+public class UnitTest {
+    
+    @Test
+    public void seededRandProducesDeterministicCombat() {
+        int seed = 42; // fixed seed for deterministic test
+
+        Warrior attacker1 = new Warrior("Attacker", 100, 10, 5, 3);
+        Warrior attacker2 = new Warrior("Attacker", 100, 10, 5, 3);
+        Random rand1 = new Random(seed);
+
+        Monster defender1 = new Monster('m', "Defender", 5, 5, 10, 3, 1);
+        Monster defender2 = new Monster('m', "Defender", 5, 5, 10, 3, 1);
+        Random rand2 = new Random(seed);
+
+        attacker1.setRand(rand1);
+        attacker2.setRand(rand2);
+
+        String desc_before_combat = defender1.description();
+
+        boolean result1 = attacker1.Combat(defender1);
+        boolean result2 = attacker2.Combat(defender2);
+
+        assertEquals(result1, result2, "Combat results should be the same with the same seed");
+        assertEquals(defender1.description(), defender2.description(), "Defender states should be the same with the same seed");
+        assertEquals(rand1.nextInt(), rand2.nextInt(), "same seed with same combat order should yield same result");
+        assertNotEquals(desc_before_combat, defender1.description(), "combat should change defender's hp");
+    }
+
+    @Test
+    public void killsDefenderWhenAttackIsOverwhelming() {
+        // Seed 42 gives a non-zero attack roll; with ATK of a million a zero roll is a ~1-in-a-million outcome of this seed
+        int seed = 42;
+        Warrior attacker = new Warrior("Attacker", 100, 1_000_000, 0, 3);
+        Monster defender = new Monster('m', "Defender", 1, 1, 0, 3, 1);
+        attacker.setRand(new Random(seed));
+
+        boolean killed = attacker.Combat(defender);
+
+        assertTrue(killed, "Combat should report the kill");
+        assertFalse(defender.isAlive(), "Defender should be dead");
+        assertTrue(defender.description().contains("HP: 0/1"));
+    }
+
+    @Test
+    public void missesWhenAttackIsZero() {
+        // ATK 0 means the attack roll is always 0, so damage is always 0 whatever the seed is
+        int seed = 42;
+        Warrior attacker = new Warrior("Attacker", 100, 0, 0, 3);
+        Monster defender = new Monster('m', "Defender", 100, 1, 0, 3, 1);
+        String before = defender.description();
+        attacker.setRand(new Random(seed));
+
+        boolean killed = attacker.Combat(defender);
+
+        assertFalse(killed, "Defender should survive");
+        assertEquals(before, defender.description(), "Defender should take no damage");
+    }
+
+    @Test
+    public void rollWithinRangeCoversWholeInclusiveRange() {
+        int seed = 7;
+
+        Warrior unit = new Warrior("Roller", 100, 10, 5, 3);
+        unit.setRand(new Random(seed));
+        int min = 0, max = 3;
+        int[] counts = new int[max + 1];
+
+        for (int i = 0; i < 5000; i++) {
+            int roll = unit.rollWithinRange(min, max);
+            assertTrue(roll >= min && roll <= max, "Roll out of range: " + roll);
+            counts[roll]++;
+        }
+
+        for (int value = min; value <= max; value++) {
+            assertTrue(counts[value] > 0, "Value never rolled: " + value);
+        }
+    }
+}
+package roguelike.model.units;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -1856,6 +2080,7 @@ import roguelike.MessageCallback;
 import java.util.ArrayList;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.Random;
 
 public class WarriorTest {
     private MessageCallback dummyCallback;
@@ -1883,23 +2108,51 @@ public class WarriorTest {
         assertFalse(warrior.CastAbility(targets, warrior), "Ability should fail when on cooldown");
     }
 
-    @Test 
-    public void testDeterminismInCastAbilityChoice() {
-        Hero warr = new Warrior("Arthas", 100, 10, 10, 1);
-        Monster m1 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
-        Monster m2 = new Monster('m', "name", 1_000, 1, 0, 50, 1);
-        List<Enemy> monsters = new ArrayList<>();
-        monsters.add(m1);
-        monsters.add(m2);
-        String desc1 = m1.description();
-        String desc2 = m2.description();
+    @Test
+    public void avengersShieldPicksTheTargetTheRandomChooses() {
+        int seed = 42;
+        Hero warrior = new Warrior("Arthas", 100, 10, 10, 1);
+        Monster m1 = new Monster('m', "first", 1_000, 1, 0, 50, 1);
+        Monster m2 = new Monster('m', "second", 1_000, 1, 0, 50, 1);
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(m1);
+        targets.add(m2);
+        warrior.setRand(new Random(seed));
 
-        warr.rand.setSeed(42);
+        int expectedIndex = new Random(seed).nextInt(2);
+        Monster chosen = (expectedIndex == 0) ? m1 : m2;
+        Monster other  = (expectedIndex == 0) ? m2 : m1;
 
-        warr.CastAbility(monsters, warr);
+        warrior.CastAbility(targets, warrior);
 
-        assertEquals(desc1, m1.description(), "m1 should not have been picked - no damage taken");
-        assertNotEquals(desc2, m2.description(), "m2 shouldve been hit - hp should change");
+        // damage is hp_pool / 10 = 10, with no defense roll
+        assertTrue(chosen.description().contains("HP: 990/1000"), "Picked target should take 10 damage");
+        assertTrue(other.description().contains("HP: 1000/1000"), "The other target should be untouched");
+    }
+
+    @Test
+    public void avengersShieldTargetChoiceDependsOnTheRandom() {
+        // Seeds derived from one fixed master Random, because consecutive seeds give the same first nextInt(2)
+        Random master = new Random(42);
+        boolean firstWasHit = false;
+        boolean secondWasHit = false;
+
+        for (int i = 0; i < 20; i++) {
+            Hero warrior = new Warrior("Arthas", 100, 10, 10, 1);
+            Monster m1 = new Monster('m', "first", 1_000, 1, 0, 50, 1);
+            Monster m2 = new Monster('m', "second", 1_000, 1, 0, 50, 1);
+            List<Enemy> targets = new ArrayList<>();
+            targets.add(m1);
+            targets.add(m2);
+            warrior.setRand(new Random(master.nextLong()));
+
+            warrior.CastAbility(targets, warrior);
+
+            if (!m1.description().contains("HP: 1000/1000")) firstWasHit = true;
+            if (!m2.description().contains("HP: 1000/1000")) secondWasHit = true;
+        }
+
+        assertTrue(firstWasHit && secondWasHit, "Both targets should be reachable");
     }
 }
 package roguelike.world;
@@ -1998,47 +2251,6 @@ public class GameBoardTest {
         board.setOccupant(pos, occupantOf(player));
         board.setOccupant(pos, new Occupant());
         assertNull(board.getPositionOf(player));
-    }
-
-    @Test
-    public void seededRandProducesDeterministicCombat() {
-        Warrior attacker1 = new Warrior("Attacker", 100, 10, 5, 3);
-        Warrior attacker2 = new Warrior("Attacker", 100, 10, 5, 3);
-
-        Monster defender1 = new Monster('m', "Defender", 5, 5, 10, 3, 1);
-        Monster defender2 = new Monster('m', "Defender", 5, 5, 10, 3, 1);
-
-
-        Random rand = new Random(25); // fixed seed for deterministic test
-        attacker1.setRand(rand);
-        attacker2.setRand(rand);
-
-        boolean result1 = attacker1.Combat(defender1);
-        boolean result2 = attacker2.Combat(defender2);
-        assertEquals(result1, result2, "Combat results should be the same with the same seed");
-        assertEquals(defender1.description(), defender2.description(), "Defender states should be the same with the same seed");
-    }
-
-    @Test 
-    public void guaranteedKillAndGuaranteedMiss() {
-        Warrior attacker1 = new Warrior("Attacker", 100, 1_000_000, 0, 3);
-        Warrior attacker2 = new Warrior("Attacker", 100, 10, 0, 3);
-        
-        Monster defender1 = new Monster('m', "Defender", 1, 1, 0, 3, 1);
-        Monster defender2 = new Monster('m', "Defender", 100, 1, 1_000_000, 3, 1);
-
-        Random rand = new Random(42); // fixed seed for deterministic test
-        attacker1.setRand(rand);
-
-        boolean result1 = attacker1.Combat(defender1);
-        assertTrue(result1, "Defender should die after combat - 1 in a million chance to miss");
-
-        String defender2_desc_before = defender2.description();
-        attacker2.setRand(rand);
-
-        boolean result2 = attacker2.Combat(defender2);
-        assertFalse(result2, "Defender should survive after combat - 1 in a million chance to hit");
-        assertEquals(defender2_desc_before, defender2.description(), "Defender state should be unchanged after combat");
     }
 
     @Test

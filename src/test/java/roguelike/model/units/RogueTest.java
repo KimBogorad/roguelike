@@ -8,6 +8,7 @@ import roguelike.MessageCallback;
 import java.util.ArrayList;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.Random;
 
 public class RogueTest {
     private MessageCallback dummyCallback;
@@ -57,26 +58,49 @@ public class RogueTest {
         assertTrue(rogue.description().contains("Energy: 100/100"), "Energy should be refilled to MAX after level up");
     }
 
-    @Test 
-    public void testDeterminismInCastAbility() {
-        Hero hero1 = new Rogue("hawkeye", 100, 10, 10, 10);
-        Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        List<Enemy> monsters = new ArrayList<>();
+    @Test
+    public void fanOfKnivesIsDeterministicWithSameSeed() {
+        int seed = 50;
 
-        monsters.add(m1);
-        hero1.rand.setSeed(50);
+        Hero rogue1 = new Rogue("Arya", 100, 10, 10, 10);
+        Monster m1 = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        rogue1.setRand(new Random(seed));
+        List<Enemy> targets1 = new ArrayList<>();
+        targets1.add(m1);
 
-        hero1.CastAbility(monsters, hero1);
+        Hero rogue2 = new Rogue("Arya", 100, 10, 10, 10);
+        Monster m2 = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        rogue2.setRand(new Random(seed));
+        List<Enemy> targets2 = new ArrayList<>();
+        targets2.add(m2);
 
-        Hero hero2 = new Rogue("hawkeye", 100, 10, 10, 10);
-        Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        
-        monsters.remove(0);
-        monsters.add(m2);
-        hero2.rand.setSeed(50);
-
-        hero2.CastAbility(monsters, hero2);
+        rogue1.CastAbility(targets1, rogue1);
+        rogue2.CastAbility(targets2, rogue2);
 
         assertEquals(m1.description(), m2.description());
+        // monster DEF 5 < rogue ATK 10, so the damage is always at least 5
+        assertFalse(m1.description().contains("HP: 100/100"), "Monster should have taken damage");
+    }
+
+    @Test
+    public void fanOfKnivesRollsDefenseForEachTargetInOrder() {
+        int seed = 50;
+        Hero rogue = new Rogue("Arya", 100, 10, 10, 10);
+        Monster m1 = new Monster('m', "first", 100, 10, 5, 100, 1);
+        Monster m2 = new Monster('m', "second", 100, 10, 5, 100, 1);
+        rogue.setRand(new Random(seed));
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(m1);
+        targets.add(m2);
+
+        // Predict with an independent Random: one defense roll per target, in list order
+        Random predictor = new Random(seed);
+        int hp1 = 100 - Math.max(0, 10 - predictor.nextInt(5 + 1));
+        int hp2 = 100 - Math.max(0, 10 - predictor.nextInt(5 + 1));
+
+        rogue.CastAbility(targets, rogue);
+
+        assertTrue(m1.description().contains("HP: " + hp1 + "/100"), m1.description());
+        assertTrue(m2.description().contains("HP: " + hp2 + "/100"), m2.description());
     }
 }

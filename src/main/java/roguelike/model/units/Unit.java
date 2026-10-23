@@ -43,8 +43,8 @@ public abstract class Unit {
         sendMsg(this.description());
         sendMsg(target.description());
 
-        int atk_roll = rollWithinRange(0, this.atk_pts + 1);
-        int def_roll = rollWithinRange(0, target.def_pts + 1);
+        int atk_roll = rollWithinRange(this.atk_pts);
+        int def_roll = rollWithinRange(target.def_pts);
 
         sendMsg(this.name + " rolled " + atk_roll + " attack points.");
         sendMsg(target.name + " rolled " + def_roll + " defense points.");
@@ -69,6 +69,10 @@ public abstract class Unit {
 
     protected int rollWithinRange(int min, int max) {
         return rand.nextInt(max - min + 1) + min;
+    }
+
+    protected int rollWithinRange(int max) {
+        return rand.nextInt(max + 1);
     }
 
     public abstract String description();

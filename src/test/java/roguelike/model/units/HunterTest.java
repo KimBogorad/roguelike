@@ -8,6 +8,7 @@ import roguelike.MessageCallback;
 import java.util.ArrayList;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.Random;
 
 public class HunterTest {
     private MessageCallback dummyCallback;
@@ -54,26 +55,50 @@ public class HunterTest {
         assertTrue(hunter.description().contains("Arrows: 29"), "Arrows should be 29 after shooting 1 and gaining 20 from level up");
     }
 
-    @Test 
-    public void testDeterminismInCastAbility() {
+    @Test
+    public void castAbilityIsDeterministicWithSameSeed() {
+        int seed = 50;
+
         Hero hero1 = new Hunter("hawkeye", 100, 10, 10, 100);
-        Monster m1 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        List<Enemy> monsters = new ArrayList<>();
-
-        monsters.add(m1);
-        hero1.rand.setSeed(50);
-
-        hero1.CastAbility(monsters, hero1);
+        Monster m1 = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        hero1.setRand(new Random(seed));
+        List<Enemy> targets1 = new ArrayList<>();
+        targets1.add(m1);
 
         Hero hero2 = new Hunter("hawkeye", 100, 10, 10, 100);
-        Monster m2 = new Monster('m', "monsty", 100, 10, 10, 100, 1);
-        
-        monsters.remove(0);
-        monsters.add(m2);
-        hero2.rand.setSeed(50);
+        Monster m2 = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        Random rand2 = new Random(seed);
+        hero2.setRand(rand2);
+        List<Enemy> targets2 = new ArrayList<>();
+        targets2.add(m2);
 
-        hero2.CastAbility(monsters, hero2);
+        hero1.CastAbility(targets1, hero1);
+        hero2.CastAbility(targets2, hero2);
 
-        assertEquals(m1.description(), m2.description());
+        // 1. Same outcome on both sides
+        assertEquals(m1.description(), m2.description(),
+                "with the same seed, the shot should hit both monsters identically");
+
+        // 2. The shot actually hurt the monster (monster DEF 5 < hunter ATK 10, so damage is always at least 5)
+        assertFalse(m1.description().contains("HP: 100/100"), "Monster should have taken damage");
+    }
+
+    @Test
+    public void shotDamageMatchesTheDefenseRoll() {
+        int seed = 50;
+        Hero hero = new Hunter("hawkeye", 100, 10, 10, 100);
+        Monster monster = new Monster('m', "monsty", 100, 10, 5, 100, 1);
+        hero.setRand(new Random(seed));
+        List<Enemy> targets = new ArrayList<>();
+        targets.add(monster);
+
+        // Predict the roll with an independent Random on the same seed
+        int expectedRoll = new Random(seed).nextInt(5 + 1);   // monster DEF is 5
+        int expectedHp = 100 - Math.max(0, 10 - expectedRoll); // hunter ATK is 10
+
+        hero.CastAbility(targets, hero);
+
+        assertTrue(monster.description().contains("HP: " + expectedHp + "/100"),
+                "Expected HP " + expectedHp + " but got: " + monster.description());
     }
 }
