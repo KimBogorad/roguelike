@@ -32,7 +32,7 @@ public class Monster extends Enemy {
             }
         } 
         else {
-            int move = this.rand.nextInt(5);
+            int move = rollWithinRange(4);
             return switch (move) {
                 case 0 -> new Position(myPos.GetX() - 1, myPos.GetY());
                 case 1 -> new Position(myPos.GetX() + 1, myPos.GetY());
