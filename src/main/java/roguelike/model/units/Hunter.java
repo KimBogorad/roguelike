@@ -46,8 +46,8 @@ public class Hunter extends Hero{
             arrows--;            
             if (!validTargets.isEmpty()) {
                 Enemy target = validTargets.get(0);
-                int defenseRoll = rollWithinRange(target.def_pts);
-                boolean killed = Attack(target, this.atk_pts, defenseRoll);
+                int defenseRoll = rollWithinRange(target.getEffectiveDef());
+                boolean killed = Attack(target, getEffectiveAtk(), defenseRoll); 
                 if (killed) {
                     this.GainExp(target.GetExpVal());
                 }

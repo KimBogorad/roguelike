@@ -43,8 +43,8 @@ public abstract class Unit {
         sendMsg(this.description());
         sendMsg(target.description());
 
-        int atk_roll = rollWithinRange(this.atk_pts);
-        int def_roll = rollWithinRange(target.def_pts);
+        int atk_roll = rollWithinRange(getEffectiveAtk());
+        int def_roll = rollWithinRange(target.getEffectiveDef());
 
         sendMsg(this.name + " rolled " + atk_roll + " attack points.");
         sendMsg(target.name + " rolled " + def_roll + " defense points.");
@@ -65,6 +65,14 @@ public abstract class Unit {
 
     public boolean isAlive() {
         return this.hp_current > 0;
+    }
+
+    public int getEffectiveAtk() {
+        return this.atk_pts;
+    }
+
+    public int getEffectiveDef() {
+        return this.def_pts;
     }
 
     protected int rollWithinRange(int min, int max) {

@@ -10,6 +10,51 @@ import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 public class UnitTest {
+
+    /** Test-only monster whose effective stats differ from its base stats. */
+    private static class FixedStatsMonster extends Monster {
+        private final int effectiveAtk;
+        private final int effectiveDef;
+
+        FixedStatsMonster(int baseAtk, int baseDef, int effectiveAtk, int effectiveDef) {
+            super('m', "Fixed", 100, baseAtk, baseDef, 0, 1);
+            this.effectiveAtk = effectiveAtk;
+            this.effectiveDef = effectiveDef;
+        }
+
+        @Override public int getEffectiveAtk() { return effectiveAtk; }
+        @Override public int getEffectiveDef() { return effectiveDef; }
+    }
+
+    @Test 
+    public void testEffectiveAtkOverridesBaseAtk() {
+        int seed = 142;
+        Hero hero = new Warrior("Leopold", 1, 10, 0, 1);
+        Monster monster = new FixedStatsMonster(0,0,10_000,0);
+
+        monster.setRand(new Random(seed)); // to avoid the 0 atk roll possibility 
+
+        boolean killed = monster.Combat(hero);
+
+        assertTrue(killed, "Hero should be killed because of the EFFECTIVE atk. Test fails if base atk was used.");
+
+    }
+
+    @Test 
+    public void testEffectiveDefOverridesBaseDef() {
+        int seed = 10000;
+        Hero hero = new Warrior("Leopold", 1, 100, 0, 1);
+        Monster monster = new FixedStatsMonster(0,0,0,100_000_000);
+
+        // to avoid the 0 atk roll possibility and effective_def larger than effective_atk.
+        // with 1_000_000 to 100 its almost certain, the seed makes it certain.
+        hero.setRand(new Random(seed)); 
+
+        hero.Combat(monster);
+
+        assertTrue(monster.description().contains("HP: 100/100"), "Monster should block all of the attack.");
+
+    }
     
     @Test
     public void seededRandProducesDeterministicCombat() {

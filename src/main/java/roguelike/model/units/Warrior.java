@@ -45,8 +45,9 @@ public class Warrior extends Hero {
     public boolean CastAbility(List<Enemy> validTargets, Hero player) { //Cast Avenger's Shield
         if (remaining_cooldown == 0) {
             remaining_cooldown = ability_cooldown + 1;
-            this.hp_current = Math.min(this.hp_current + (10 * this.def_pts), this.hp_pool);
-            sendMsg(this.name + " used Avenger's Shield, healing for " + (10 * this.def_pts) + ".");
+            int effective_def = getEffectiveDef();
+            this.hp_current = Math.min(this.hp_current + (10 * effective_def), this.hp_pool);
+            sendMsg(this.name + " used Avenger's Shield, healing for " + (10 * effective_def) + ".");
             if (!validTargets.isEmpty()) {
                 int randomIndex = rollWithinRange(validTargets.size()-1); // offset because rWR rolls max+1
                 Enemy target = validTargets.get(randomIndex);

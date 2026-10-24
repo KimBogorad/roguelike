@@ -19,8 +19,8 @@ public class Boss extends Monster implements HeroicUnit {
     @Override
     public boolean CastAbility(List<Enemy> validTargets, Hero player) {
         sendMsg(this.name + " shoots a devastating blast at " + player.name + "!");
-        int abilityDamage = this.atk_pts;
-        int defenseRoll = rollWithinRange(player.def_pts);
+        int abilityDamage = getEffectiveAtk();
+        int defenseRoll = rollWithinRange(player.getEffectiveDef());
         return Attack(player, abilityDamage, defenseRoll);
     }
 

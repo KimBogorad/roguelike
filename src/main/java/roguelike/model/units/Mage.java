@@ -50,8 +50,8 @@ public class Mage extends Hero {
             while (hits < hits_count && !validTargets.isEmpty()) {
                 int randomIndex = rollWithinRange(validTargets.size()-1); //offset because rWR rolls max+1
                 Enemy target = validTargets.get(randomIndex);
-                int defenseRoll = rollWithinRange(target.def_pts);
-                boolean killed = Attack(target, spell_power, defenseRoll);
+                int defenseRoll = rollWithinRange(target.getEffectiveDef());
+                boolean killed = Attack(target, spell_power, defenseRoll); 
                 if (killed) {
                     this.GainExp(target.GetExpVal());
                     validTargets.remove(randomIndex);
